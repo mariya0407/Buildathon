@@ -1,0 +1,16 @@
+{
+    "name": "anonymous-ai-feedback",
+    "version": "1.0.0",
+    "description": "A decentralized anonymous feedback platform for students.",
+    "dependencies": {
+      "tailwindcss": "^3.0.0"
+    },
+    "scripts": {
+      "build": "npx tailwindcss -i ./frontend/styles.css -o ./frontend/output.css --watch"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
+  }
+  
+  

@@ -1,0 +1,12 @@
+# Backend
+Flask
+Flask-Cors
+hashlib
+Flask-SocketIO
+
+
+
+# AI & Machine Learning
+tensorflow
+nltk
+Pillow

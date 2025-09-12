@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unfiltered - An Anonymous Feedback</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='90' font-weight='bold' fill='%23EAB308' font-family='Inter'>U</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .blur-content { filter: blur(5px); user-select: none; }
+        .modal { display: none; }
+        .modal-active { display: flex; }
+        #notification {
+            transition: transform 0.3s ease-in-out;
+            transform: translateY(200%);
+        }
+        #notification.show {
+            transform: translateY(0);
+        }
+        .vote-button.upvoted { color: #22C55E; }
+        .vote-button.downvoted { color: #EF4444; }
+        .comments-section {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
+        }
+        .comments-section.expanded {
+            max-height: 1000px;
+        }
+        .profile-pic {
+            width: 128px;
+            height: 128px;
+            object-fit: cover;
+        }
+        .avatar-option {
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 3px solid transparent;
+        }
+        .avatar-option:hover {
+            transform: scale(1.05);
+        }
+        .avatar-option.selected {
+            border-color: #3B82F6;
+        }
+        #splash-screen {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease-out;
+        }
+        #splash-screen.fade-out {
+            animation: zoomOut 1.5s forwards;
+        }
+        #splash-screen h1 {
+            font-size: 4rem;
+            font-weight: bold;
+        }
+        @keyframes zoomOut {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; visibility: hidden; }
+        }
+        #app-wrapper {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.5s ease-in;
+        }
+        #app-wrapper.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+    <script>
+        // Auto-detects and applies system theme preference on initial load
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+</head>
+<body class="bg-gray-100 dark:bg-slate-900 transition-colors duration-300">
+
+    <div id="splash-screen" class="bg-gray-100 dark:bg-slate-900">
+        <h1 class="text-yellow-500 dark:text-yellow-400">Unfiltered</h1>
+    </div>
+
+    <div id="app-wrapper">
+        <!-- Header -->
+        <header class="bg-white dark:bg-slate-800 shadow-sm sticky top-0 z-40 dark:border-b dark:border-slate-700 transition-colors duration-300">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-3">
+                    <div class="flex-shrink-0">
+                        <a href="#" onclick="window.location.reload(); return false;" class="cursor-pointer" title="Reload page">
+                            <h1 class="text-2xl font-bold text-yellow-500 dark:text-yellow-400">Unfiltered</h1>
+                        </a>
+                    </div>
+                    <div class="flex-1 mx-4">
+                        <input id="search-input" type="search" placeholder="Search posts..." class="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-200 bg-gray-100 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-gray-400 transition-colors duration-300">
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- THEME TOGGLE BUTTON REMOVED -->
+                        <button id="login-button" class="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-full hover:bg-yellow-600">Login</button>
+                        <div id="user-controls" class="hidden items-center space-x-4">
+                            <button id="create-post-button" class="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600">Create Post</button>
+                            <div id="user-initial-circle" class="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-white font-bold text-lg cursor-pointer overflow-hidden"></div>
+                            <button id="logout-button" class="text-sm text-gray-600 hover:text-yellow-600 dark:text-gray-400 dark:hover:text-yellow-500">Logout</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-4" id="posts-container">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400 transition-colors duration-300">Loading posts...</div>
+                </div>
+                <aside class="space-y-6">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
+                        <h3 class="font-bold text-lg mb-2 dark:text-white">Community Guidelines</h3>
+                        <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                            <li>Be respectful, even when disagreeing.</li>
+                            <li>No hate speech or harassment.</li>
+                            <li>Keep discussions relevant to the institute.</li>
+                            <li>Tag your posts appropriately.</li>
+                            <li>AI moderation is active.</li>
+                        </ul>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
+                        <h3 class="font-bold text-lg mb-2 dark:text-white">Popular Tags</h3>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-300">#Exams</span>
+                            <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">#HostelLife</span>
+                            <span class="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">#Placements</span>
+                            <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">#Cafeteria</span>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </main>
+
+        <main id="profile-page" class="hidden max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="bg-white dark:bg-slate-800 p-8 rounded-lg shadow text-center transition-colors duration-300">
+                <button id="back-to-feed-button" class="float-left text-sm text-yellow-600 hover:underline dark:text-yellow-500">&larr; Back to Feed</button>
+                <h2 class="text-3xl font-bold mb-6 dark:text-white">Your Profile</h2>
+                <div class="relative inline-block mb-4">
+                    <img id="profile-page-pic" src="https://placehold.co/128x128/805ad5/ffffff?text=S" class="profile-pic rounded-full mx-auto shadow-md">
+                    <button id="change-picture-button" class="absolute bottom-0 right-0 bg-yellow-500 text-white rounded-full h-8 w-8 flex items-center justify-center hover:bg-yellow-600 shadow-sm" title="Change profile picture">
+                        ✏️
+                    </button>
+                </div>
+                <p id="profile-email" class="text-xl font-semibold text-gray-800 dark:text-gray-200"></p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="login-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md transition-colors duration-300">
+            <h2 class="text-2xl font-bold mb-4 dark:text-white">Login to Buildathon</h2>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                    <input type="email" id="email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="student@student.edu">
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                    <input type="password" id="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="password123 or password456">
+                </div>
+                <div id="login-error" class="text-red-500 text-sm mb-4 hidden"></div>
+                <div class="flex items-center justify-between">
+                    <button type="button" id="close-login-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
+                    <button type="submit" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="create-post-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl transition-colors duration-300">
+            <h2 class="text-2xl font-bold mb-4 dark:text-white">Create a New Post</h2>
+            <form id="create-post-form">
+                <div class="mb-4">
+                    <label for="post-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                    <input type="text" id="post-title" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500 focus:border-yellow-500">
+                </div>
+                <div class="mb-4">
+                    <label for="post-content" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Content</label>
+                    <textarea id="post-content" rows="6" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500 focus:border-yellow-500"></textarea>
+                </div>
+                <div class="flex items-center justify-between">
+                    <button type="button" id="close-post-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
+                    <div>
+                        <button type="button" id="improve-ai-button" class="px-4 py-2 mr-2 border border-yellow-500 text-yellow-600 font-semibold rounded-lg hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 dark:hover:bg-slate-700">Improve with AI ✨</button>
+                        <button type="submit" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Post</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="change-picture-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl transition-colors duration-300">
+            <h2 class="text-2xl font-bold mb-4 dark:text-white">Change Profile Picture</h2>
+            <div class="mb-6">
+                <h3 class="font-semibold mb-2 dark:text-gray-200">Choose an Avatar</h3>
+                <div id="avatar-selection" class="grid grid-cols-7 gap-4"></div>
+            </div>
+            <div class="flex items-center justify-end mt-8 space-x-4">
+                <button type="button" id="close-picture-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
+                <button type="button" id="save-picture-button" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="fixed bottom-5 right-5 bg-green-600 text-white py-3 px-6 rounded-lg shadow-lg"></div>
+
+<script>
+    const API_URL = 'http://127.0.0.1:5001';
+    const socket = io(API_URL);
+
+    // --- DOM Elements ---
+    const splashScreen = document.getElementById('splash-screen');
+    const appWrapper = document.getElementById('app-wrapper');
+    const searchInput = document.getElementById('search-input');
+    const mainContent = document.getElementById('main-content');
+    const profilePage = document.getElementById('profile-page');
+    const postsContainer = document.getElementById('posts-container');
+    const loginButton = document.getElementById('login-button');
+    const userControls = document.getElementById('user-controls');
+    const logoutButton = document.getElementById('logout-button');
+    const userInitialCircle = document.getElementById('user-initial-circle');
+    const loginModal = document.getElementById('login-modal');
+    const backToFeedButton = document.getElementById('back-to-feed-button');
+    const profilePagePic = document.getElementById('profile-page-pic');
+    const profileEmail = document.getElementById('profile-email');
+    const changePictureButton = document.getElementById('change-picture-button');
+    const changePictureModal = document.getElementById('change-picture-modal');
+    const closePictureModal = document.getElementById('close-picture-modal');
+    const savePictureButton = document.getElementById('save-picture-button');
+    const avatarSelection = document.getElementById('avatar-selection');
+    const createPostButton = document.getElementById('create-post-button');
+    const createPostModal = document.getElementById('create-post-modal');
+    const closePostModal = document.getElementById('close-post-modal');
+    const createPostForm = document.getElementById('create-post-form');
+    const improveAIButton = document.getElementById('improve-ai-button');
+    const postContentInput = document.getElementById('post-content');
+    const closeLoginModal = document.getElementById('close-login-modal');
+    const loginForm = document.getElementById('login-form');
+    const loginError = document.getElementById('login-error');
+    const notification = document.getElementById('notification');
+    
+    // --- State Variables ---
+    let userSession = null;
+    let tempProfilePic = null;
+    let allPosts = [];
+    
+    // --- Real-time Logic ---
+    socket.on('connect', () => console.log('Connected to real-time server!'));
+    socket.on('new_post', () => { showNotification('A new post was just created!', 'info'); fetchPosts(); });
+    socket.on('post_update', () => { fetchPosts(); });
+
+    // --- Dynamic Avatar Generation ---
+    function populateAvatars() {
+        avatarSelection.innerHTML = '';
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        const colors = ['ef4444', 'f97316', 'eab308', '84cc16', '22c55e', '14b8a6', '06b6d4', '3b82f6', '8b5cf6', 'd946ef'];
+        alphabet.forEach((letter, index) => {
+            const color = colors[index % colors.length];
+            const src = `https://placehold.co/64x64/${color}/FFFFFF?text=${letter}`;
+            const img = document.createElement('img');
+            img.src = src;
+            img.className = 'w-16 h-16 rounded-full avatar-option';
+            img.onclick = () => selectAvatar(img, src);
+            avatarSelection.appendChild(img);
+        });
+    }
+
+    // --- Navigation, Authentication, Profile Picture, etc. ---
+    function showProfilePage() {
+        mainContent.classList.add('hidden');
+        profilePage.classList.remove('hidden');
+        profileEmail.textContent = userSession.email;
+        profilePagePic.src = userSession.profilePicture || `https://placehold.co/128x128/eab308/ffffff?text=${userSession.email.charAt(0).toUpperCase()}`;
+    }
+    
+    function showFeed() {
+        profilePage.classList.add('hidden');
+        mainContent.classList.remove('hidden');
+    }
+
+    function checkLoginState() {
+        const storedSession = localStorage.getItem('buildathon_session');
+        if (storedSession) {
+            userSession = JSON.parse(storedSession);
+            showLoggedInUI();
+        } else {
+            showLoggedOutUI();
+        }
+        fetchPosts();
+    }
+
+    function showLoggedInUI() {
+        loginButton.classList.add('hidden');
+        userControls.classList.remove('hidden');
+        userControls.classList.add('flex');
+        if (userSession.profilePicture) {
+            userInitialCircle.innerHTML = `<img src="${userSession.profilePicture}" class="w-full h-full object-cover rounded-full">`;
+        } else {
+            userInitialCircle.innerHTML = `<span>${userSession.email.charAt(0).toUpperCase()}</span>`;
+        }
+    }
+
+    function showLoggedOutUI() {
+        loginButton.classList.remove('hidden');
+        userControls.classList.add('hidden');
+        userControls.classList.remove('flex');
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        loginError.classList.add('hidden');
+        try {
+            const response = await fetch(`${API_URL}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            if (!response.ok) throw new Error('Invalid credentials');
+            const data = await response.json();
+            userSession = { token: data.token, role: data.role, email: data.email, profilePicture: null };
+            localStorage.setItem('buildathon_session', JSON.stringify(userSession));
+            loginModal.classList.remove('modal-active');
+            loginForm.reset();
+            checkLoginState();
+        } catch (error) {
+            loginError.textContent = 'Login failed. Please check your email and password.';
+            loginError.classList.remove('hidden');
+        }
+    });
+
+    logoutButton.addEventListener('click', () => {
+        userSession = null;
+        localStorage.removeItem('buildathon_session');
+        checkLoginState();
+        showFeed();
+    });
+
+    function updateUserPicture() {
+        if (!tempProfilePic) return;
+        userSession.profilePicture = tempProfilePic;
+        localStorage.setItem('buildathon_session', JSON.stringify(userSession));
+        showLoggedInUI();
+        if(!profilePage.classList.contains('hidden')) {
+            profilePagePic.src = tempProfilePic;
+        }
+        closePictureModalFunction();
+    }
+    
+    function closePictureModalFunction() {
+        tempProfilePic = null;
+        document.querySelectorAll('.avatar-option.selected').forEach(el => el.classList.remove('selected'));
+        changePictureModal.classList.remove('modal-active');
+    }
+    
+    function selectAvatar(element, src) {
+        document.querySelectorAll('.avatar-option.selected').forEach(el => el.classList.remove('selected'));
+        element.classList.add('selected');
+        tempProfilePic = src;
+    }
+    
+    userInitialCircle.addEventListener('click', () => { if(userSession) showProfilePage(); });
+    backToFeedButton.addEventListener('click', showFeed);
+    changePictureButton.addEventListener('click', () => changePictureModal.classList.add('modal-active'));
+    closePictureModal.addEventListener('click', closePictureModalFunction);
+    savePictureButton.addEventListener('click', updateUserPicture);
+    loginButton.addEventListener('click', () => loginModal.classList.add('modal-active'));
+    closeLoginModal.addEventListener('click', () => loginModal.classList.remove('modal-active'));
+    createPostButton.addEventListener('click', () => createPostModal.classList.add('modal-active'));
+    closePostModal.addEventListener('click', () => createPostModal.classList.remove('modal-active'));
+
+    function showNotification(message, type = 'error') {
+        notification.textContent = message;
+        notification.className = 'fixed bottom-5 right-5 text-white py-3 px-6 rounded-lg shadow-lg';
+        notification.classList.add(type === 'info' ? 'bg-yellow-500' : 'bg-red-500');
+        notification.classList.add('show');
+        setTimeout(() => notification.classList.remove('show'), 3000);
+    }
+
+    async function handleVote(postId, direction) {
+        if (!userSession) { showNotification('Please log in to vote.'); return; }
+        await fetch(`${API_URL}/api/posts/${postId}/vote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
+            body: JSON.stringify({ direction: direction })
+        });
+    }
+
+    async function toggleComments(postId) {
+        const commentsSection = document.getElementById(`comments-section-${postId}`);
+        const isExpanded = commentsSection.classList.contains('expanded');
+        if (!isExpanded && commentsSection.innerHTML === '') {
+            await fetchAndRenderComments(postId);
+        }
+        commentsSection.classList.toggle('expanded');
+    }
+
+    async function fetchAndRenderComments(postId) {
+        const commentsSection = document.getElementById(`comments-section-${postId}`);
+        commentsSection.innerHTML = `<div class="text-sm text-gray-500 dark:text-gray-400 p-4">Loading...</div>`;
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (userSession) headers['X-User-Role'] = userSession.role;
+            const response = await fetch(`${API_URL}/api/posts/${postId}/comments`, { headers });
+            const comments = await response.json();
+            
+            let commentsHTML = comments.length > 0 ? comments.map(c => `<div class="border-t border-gray-100 dark:border-slate-700 py-3"><p class="text-sm font-semibold text-gray-600 dark:text-gray-300">${c.author_id}</p><p class="text-gray-800 dark:text-gray-200">${c.content}</p></div>`).join('') : '<p class="text-sm text-gray-500 dark:text-gray-400 py-3">No comments yet.</p>';
+            if (userSession) {
+                 commentsHTML += `<form class="add-comment-form border-t border-gray-200 dark:border-slate-700 pt-4" data-post-id="${postId}"><textarea class="w-full p-2 border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Add a comment..." required></textarea><button type="submit" class="mt-2 px-4 py-1 bg-yellow-500 text-white text-sm rounded-md hover:bg-yellow-600">Comment</button></form>`;
+            }
+            commentsSection.innerHTML = commentsHTML;
+            const form = commentsSection.querySelector('.add-comment-form');
+            if(form) form.addEventListener('submit', handlePostComment);
+        } catch (error) {
+            commentsSection.innerHTML = `<div class="text-sm text-red-500 p-4">Failed to load comments.</div>`;
+        }
+    }
+    
+    async function handlePostComment(event) {
+        event.preventDefault();
+        const postId = event.target.dataset.postId;
+        const textarea = event.target.querySelector('textarea');
+        await fetch(`${API_URL}/api/posts/${postId}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
+            body: JSON.stringify({ content: textarea.value })
+        });
+    }
+
+    const renderPosts = (posts) => {
+        const openPostId = document.querySelector('.comments-section.expanded')?.id.split('-')[2];
+        const searchTerm = searchInput.value;
+        if (posts.length === 0) {
+            postsContainer.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400">${searchTerm ? 'No results found for "' + searchTerm + '".' : 'No posts yet. Be the first to post!'}</div>`;
+            return;
+        }
+        postsContainer.innerHTML = '';
+        posts.forEach(post => {
+            const postElement = document.createElement('div');
+            postElement.className = 'bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300';
+            const upvotedClass = post.user_vote === 'up' ? 'upvoted' : '';
+            const downvotedClass = post.user_vote === 'down' ? 'downvoted' : '';
+            postElement.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="bg-gray-200 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-slate-700 dark:text-slate-300">${post.flair || 'General'}</span>
+                        <h2 class="text-xl font-bold mt-2 dark:text-white">${post.title}</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Posted by ${post.author}</p>
+                    </div>
+                    <div class="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
+                        <button data-post-id="${post.id}" data-direction="up" class="vote-button hover:text-green-500 text-xl ${upvotedClass}">▲</button>
+                        <span class="font-bold text-lg dark:text-white">${post.upvotes - post.downvotes}</span>
+                        <button data-post-id="${post.id}" data-direction="down" class="vote-button hover:text-red-500 text-xl ${downvotedClass}">▼</button>
+                    </div>
+                </div>
+                ${post.is_moderated ? `<p class="text-xs text-red-500 mb-2">This content was flagged by our AI for review.</p>` : ''}
+                <div class="${post.is_moderated ? 'blur-content' : ''} mt-2 text-gray-700 dark:text-gray-300">${post.content}</div>
+                <div class="mt-4 pt-2 border-t border-gray-100 dark:border-slate-700">
+                    <button class="comments-toggle-button text-sm text-gray-600 hover:text-yellow-600 font-semibold dark:text-gray-400 dark:hover:text-yellow-500" data-post-id="${post.id}">${post.comments_count} comments</button>
+                </div>
+                <div id="comments-section-${post.id}" class="comments-section pl-4 mt-2"></div>`;
+            postsContainer.appendChild(postElement);
+        });
+        document.querySelectorAll('.vote-button').forEach(b => b.addEventListener('click', e => handleVote(e.currentTarget.dataset.postId, e.currentTarget.dataset.direction)));
+        document.querySelectorAll('.comments-toggle-button').forEach(b => b.addEventListener('click', e => toggleComments(e.currentTarget.dataset.postId)));
+        if(openPostId) {
+            const commentsSection = document.getElementById(`comments-section-${openPostId}`);
+            if(commentsSection) {
+                fetchAndRenderComments(openPostId);
+                commentsSection.classList.add('expanded');
+            }
+        }
+    };
+
+    const fetchPosts = async () => {
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (userSession) {
+                headers['X-User-Role'] = userSession.role;
+                headers['X-User-Id'] = userSession.token;
+            }
+            const response = await fetch(`${API_URL}/api/posts`, { headers: headers, cache: 'no-cache' });
+            if (!response.ok) throw new Error('Network error');
+            allPosts = await response.json();
+            renderPosts(allPosts.filter(post => {
+                const searchTerm = searchInput.value.toLowerCase();
+                if (!searchTerm) return true;
+                return post.title.toLowerCase().includes(searchTerm) || post.content.toLowerCase().includes(searchTerm);
+            }));
+        } catch (error) {
+            postsContainer.innerHTML = '<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center text-red-500">Failed to load posts. Is the backend server running?</div>';
+        }
+    };
+    
+    function handleSearch(event) {
+        const searchTerm = event.target.value.toLowerCase();
+        const filteredPosts = allPosts.filter(post => {
+            return post.title.toLowerCase().includes(searchTerm) || post.content.toLowerCase().includes(searchTerm);
+        });
+        renderPosts(filteredPosts);
+    }
+    
+    createPostForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await fetch(`${API_URL}/api/posts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
+            body: JSON.stringify({ title: document.getElementById('post-title').value, content: document.getElementById('post-content').value })
+        });
+        createPostForm.reset();
+        createPostModal.classList.remove('modal-active');
+    });
+
+    improveAIButton.addEventListener('click', async () => {
+        const originalText = postContentInput.value;
+        if (!originalText) return;
+        improveAIButton.textContent = 'Improving...';
+        improveAIButton.disabled = true;
+        try {
+            const response = await fetch(`${API_URL}/api/improve-text`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: originalText })
+            });
+            if (!response.ok) throw new Error('AI service failed');
+            const data = await response.json();
+            postContentInput.value = data.improved_text;
+        } catch (error) { 
+            console.error('AI improvement failed:', error);
+            showNotification('AI Assistant is currently unavailable.');
+        } finally {
+            improveAIButton.textContent = 'Improve with AI ✨';
+            improveAIButton.disabled = false;
+        }
+    });
+
+    // --- Initial Load ---
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            splashScreen.classList.add('fade-out');
+        }, 1500);
+
+        splashScreen.addEventListener('animationend', () => {
+            splashScreen.style.display = 'none';
+            appWrapper.classList.add('visible');
+        });
+
+        searchInput.addEventListener('input', handleSearch);
+        // updateThemeIcon(); // No longer needed
+        populateAvatars();
+        checkLoginState();
+    });
+
+</script>
+</body>
+</html>
+
