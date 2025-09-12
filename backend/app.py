@@ -13,10 +13,11 @@ if project_root not in sys.path:
 from blockchain.blockchain import Blockchain
 from models.moderation_model import check_content
 from models.writing_assistant import improve_text_with_ai
+# --- NEW: Import the summarization model ---
+from models.summarization_model import summarize_text_with_ai
 
 app = Flask(__name__)
 CORS(app)
-# --- Initialize SocketIO ---
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Mock User Database ---
@@ -27,101 +28,125 @@ users_db = {
 
 # --- Initialize Blockchain ---
 blockchain = Blockchain()
-
-# --- Helper Function ---
-def get_post_data_from_block(block):
-    if isinstance(block.data, str):
-        try: return json.loads(block.data)
-        except (json.JSONDecodeError): return None
-    elif isinstance(block.data, dict):
-        return block.data
-    return None
-
-# Adding initial posts if chain is new
 if len(blockchain.chain) == 1:
     initial_posts = [
-        {"post_id": "b1", "title": "Feeling Stressed About Finals", "content": "The upcoming final exams are really tough. Does anyone have study tips?", "author_id": "student123", "flair": "Query", "comments": [], "upvoted_by": [], "downvoted_by": [], "is_moderated": False},
-        {"post_id": "b2", "title": "Appreciation for Prof. Smith", "content": "Just wanted to say that Professor Smith's lectures on thermodynamics are amazing. So clear and engaging!", "author_id": "student456", "flair": "Appreciation", "comments": [], "upvoted_by": [], "downvoted_by": [], "is_moderated": False}
+        {"post_id": "b1", "title": "Feeling Stressed About Finals", "content": "The upcoming final exams are really tough. Does anyone have study tips?", "author_id": "student123", "flair": "Query", "upvotes": 15, "downvotes": 1, "comments_count": 0, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "b2", "title": "Appreciation for Prof. Smith", "content": "Just wanted to say that Professor Smith's lectures are amazing.", "author_id": "student456", "flair": "Appreciation", "upvotes": 42, "downvotes": 0, "comments_count": 0, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "g1", "title": "Classroom Infrastructure Issue", "content": "Lecture Hall 3 projector hasn’t worked for weeks.", "author_id": "student101", "flair": "Grievance", "upvotes": 15, "downvotes": 2, "comments_count": 3, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "a1", "title": "Kudos to Prof. Lee", "content": "Prof. Lee’s tutorials are always engaging and clear.", "author_id": "student202", "flair": "Appreciation", "upvotes": 30, "downvotes": 0, "comments_count": 1, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "g2", "title": "Library Timings", "content": "Library closes too early, hard for late-night study.", "author_id": "student303", "flair": "Grievance", "upvotes": 22, "downvotes": 1, "comments_count": 2, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "a2", "title": "Prof. Mehta’s Lab Sessions", "content": "Prof. Mehta’s lab sessions make tough topics easy.", "author_id": "student404", "flair": "Appreciation", "upvotes": 18, "downvotes": 0, "comments_count": 0, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "g3", "title": "Cafeteria Food Quality", "content": "Cafeteria food quality and hygiene need improvement.", "author_id": "student505", "flair": "Grievance", "upvotes": 25, "downvotes": 3, "comments_count": 5, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "a3", "title": "Thanks to Prof. Gomez", "content": "Prof. Gomez is very supportive for research projects.", "author_id": "student606", "flair": "Appreciation", "upvotes": 40, "downvotes": 1, "comments_count": 2, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "g4", "title": "Wi-Fi Connectivity Issues", "content": "Wi-Fi is unstable in hostel blocks, disrupts classes.", "author_id": "student707", "flair": "Grievance", "upvotes": 28, "downvotes": 0, "comments_count": 4, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "a4", "title": "Prof. Sharma’s Guidance", "content": "Prof. Sharma’s career guidance helped me in placements.", "author_id": "student808", "flair": "Appreciation", "upvotes": 35, "downvotes": 0, "comments_count": 3, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "g5", "title": "Overloaded Assignments", "content": "Too many assignments with the same deadlines.", "author_id": "student909", "flair": "Grievance", "upvotes": 20, "downvotes": 2, "comments_count": 1, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []},
+        {"post_id": "a5", "title": "Prof. Wang’s Teaching Style", "content": "Prof. Wang’s real-world examples make lectures fun.", "author_id": "student111", "flair": "Appreciation", "upvotes": 27, "downvotes": 0, "comments_count": 0, "is_moderated": False, "upvoted_by": [], "downvoted_by": [], "comments": []}
+
     ]
     for post in initial_posts:
         blockchain.add_block(post)
 
+# --- Helper Function to get post data safely ---
+def get_post_data_from_block(block):
+    if isinstance(block.data, str):
+        try:
+            return json.loads(block.data)
+        except (json.JSONDecodeError):
+            return None
+    elif isinstance(block.data, dict):
+        return block.data
+    return None
+
 # --- API Endpoints ---
+@app.route('/')
+def index():
+    return jsonify({"status": "Unfiltered API is running!"})
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data.get('email')
-    password = data.get('password')
     user = users_db.get(email)
-    if user and user['password'] == password:
-        mock_token = f"token_for_{user['role']}_{email}"
-        return jsonify({"message": "Login successful", "token": mock_token, "role": user['role'], "email": email})
+    if user and user['password'] == data.get('password'):
+        return jsonify({"message": "Login successful", "token": f"token_for_{user['role']}_{email}", "role": user['role'], "email": email})
     return jsonify({"error": "Invalid credentials"}), 401
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
     user_role = request.headers.get('X-User-Role', 'student')
     user_id = request.headers.get('X-User-Id')
-    chain_data = blockchain.chain[1:]
     posts_list = []
-    for block in chain_data:
+    for block in blockchain.chain[1:]:
         post_data = get_post_data_from_block(block)
         if post_data:
-            author = "ANONYMOUS" if user_role == 'staff' else post_data.get('author_id', 'student101')
             user_vote = 'up' if user_id in post_data.get('upvoted_by', []) else 'down' if user_id in post_data.get('downvoted_by', []) else None
             posts_list.append({
                 "id": post_data.get('post_id'), "title": post_data.get('title'), "content": post_data.get('content'),
-                "author": author, "flair": post_data.get('flair'), "upvotes": len(post_data.get('upvoted_by', [])),
-                "downvotes": len(post_data.get('downvoted_by', [])), "comments_count": len(post_data.get('comments', [])),
-                "is_moderated": post_data.get('is_moderated', False), "user_vote": user_vote
+                "author": "ANONYMOUS" if user_role == 'staff' else post_data.get('author_id', 'student101'),
+                "flair": post_data.get('flair'), "upvotes": post_data.get('upvotes'), "downvotes": post_data.get('downvotes'),
+                "comments_count": len(post_data.get('comments', [])), "is_moderated": post_data.get('is_moderated', False), "user_vote": user_vote
             })
     return jsonify(posts_list)
 
 @app.route('/api/posts', methods=['POST'])
 def create_post():
-    post_data = request.get_json()
-    user_id = request.headers.get('X-User-Id')
-    if not post_data or 'title' not in post_data or 'content' not in post_data:
-        return jsonify({"error": "Missing title or content"}), 400
-    moderation_result = check_content(post_data['content'])
-    latest_block = blockchain.get_latest_block()
-    new_post_block = {
-        "post_id": f"b{latest_block.index + 1}", "title": post_data['title'], "content": post_data['content'],
-        "author_id": user_id or "temp_user", "flair": post_data.get('flair', 'General'), "comments": [], 
-        "upvoted_by": [], "downvoted_by": [], "is_moderated": moderation_result["is_flagged"]
-    }
-    blockchain.add_block(new_post_block)
-    socketio.emit('new_post', {"message": "A new post was created"})
-    return jsonify({"message": "Post created successfully"}), 201
-
-@app.route('/api/posts/<string:post_id>/vote', methods=['POST'])
-def vote_on_post(post_id):
     data = request.get_json()
     user_id = request.headers.get('X-User-Id')
     if not user_id: return jsonify({"error": "Authentication required"}), 401
+    moderation_result = check_content(data['content'])
+    new_post_block = {
+        "post_id": f"b{blockchain.get_latest_block().index + 1}", "title": data['title'], "content": data['content'],
+        "author_id": user_id, "flair": data.get('flair', 'General'), "upvotes": 0, "downvotes": 0, "comments": [],
+        "is_moderated": moderation_result["is_flagged"], "upvoted_by": [], "downvoted_by": []
+    }
+    blockchain.add_block(new_post_block)
+    socketio.emit('new_post', {'post_id': new_post_block['post_id']})
+    return jsonify({"message": "Post created"}), 201
+
+# --- NEW: Summarization Endpoint ---
+@app.route('/api/summarize-feed', methods=['POST'])
+def summarize_feed():
+    data = request.get_json()
+    posts = data.get('posts', [])
+    if not posts:
+        return jsonify({"error": "No posts provided for summarization"}), 400
     
+    # Combine titles and content into a single block of text for the AI
+    full_text = "\n".join([f"Title: {post.get('title', '')} Content: {post.get('content', '')}" for post in posts])
+    
+    summary_result = summarize_text_with_ai(full_text)
+    return jsonify(summary_result)
+
+@app.route('/api/posts/<string:post_id>/vote', methods=['POST'])
+def vote_on_post(post_id):
+    user_id = request.headers.get('X-User-Id')
+    if not user_id: return jsonify({"error": "Authentication required"}), 401
+    direction = request.get_json().get('direction')
+    target_block = None
     for block in blockchain.chain[1:]:
         post_data = get_post_data_from_block(block)
         if post_data and post_data.get('post_id') == post_id:
-            upvoters = set(post_data.get('upvoted_by', []))
-            downvoters = set(post_data.get('downvoted_by', []))
-            if data['direction'] == 'up':
-                if user_id in upvoters: upvoters.remove(user_id)
-                else:
-                    upvoters.add(user_id)
-                    downvoters.discard(user_id)
-            elif data['direction'] == 'down':
-                if user_id in downvoters: downvoters.remove(user_id)
-                else:
-                    downvoters.add(user_id)
-                    upvoters.discard(user_id)
-            post_data['upvoted_by'] = list(upvoters)
-            post_data['downvoted_by'] = list(downvoters)
-            block.data = json.dumps(post_data, sort_keys=True)
-            socketio.emit('post_update', {"message": "A post was updated"})
-            return jsonify({"message": "Vote recorded"})
-    return jsonify({"error": "Post not found"}), 404
-    
+            target_block = block
+            break
+    if not target_block: return jsonify({"error": "Post not found"}), 404
+    post_data = get_post_data_from_block(target_block)
+    upvoted_by = set(post_data.get('upvoted_by', []))
+    downvoted_by = set(post_data.get('downvoted_by', []))
+    if direction == 'up':
+        if user_id in upvoted_by: upvoted_by.remove(user_id)
+        else: upvoted_by.add(user_id); downvoted_by.discard(user_id)
+    elif direction == 'down':
+        if user_id in downvoted_by: downvoted_by.remove(user_id)
+        else: downvoted_by.add(user_id); upvoted_by.discard(user_id)
+    post_data['upvoted_by'] = list(upvoted_by)
+    post_data['downvoted_by'] = list(downvoted_by)
+    post_data['upvotes'] = len(upvoted_by)
+    post_data['downvotes'] = len(downvoted_by)
+    target_block.data = json.dumps(post_data, sort_keys=True)
+    socketio.emit('post_update', {'post_id': post_id})
+    return jsonify({"message": "Vote recorded"})
+
 @app.route('/api/posts/<string:post_id>/comments', methods=['GET', 'POST'])
 def handle_comments(post_id):
     target_block = None
@@ -130,44 +155,29 @@ def handle_comments(post_id):
         if post_data and post_data.get('post_id') == post_id:
             target_block = block
             break
-    if not target_block:
-        return jsonify({"error": "Post not found"}), 404
-    
+    if not target_block: return jsonify({"error": "Post not found"}), 404
     post_data = get_post_data_from_block(target_block)
-
     if request.method == 'GET':
         user_role = request.headers.get('X-User-Role', 'student')
         comments = post_data.get('comments', [])
         if user_role == 'staff':
-            for comment in comments:
-                comment['author_id'] = 'ANONYMOUS'
+            for comment in comments: comment['author_id'] = "ANONYMOUS"
         return jsonify(comments)
-    
     if request.method == 'POST':
-        comment_data = request.get_json()
         user_id = request.headers.get('X-User-Id')
-        if not comment_data or 'content' not in comment_data:
-            return jsonify({"error": "Comment content is missing"}), 400
-        new_comment = {
-            "comment_id": f"c{len(post_data.get('comments', [])) + 1}",
-            "author_id": user_id or "temp_user",
-            "content": comment_data['content']
-        }
-        post_data.get('comments', []).append(new_comment)
+        if not user_id: return jsonify({"error": "Authentication required"}), 401
+        comment_content = request.get_json().get('content')
+        new_comment = {"author_id": user_id, "content": comment_content}
+        post_data.setdefault('comments', []).append(new_comment)
         target_block.data = json.dumps(post_data, sort_keys=True)
-        socketio.emit('post_update', {"message": "A comment was added"})
-        return jsonify({"message": "Comment added"}), 201
+        socketio.emit('post_update', {'post_id': post_id})
+        return jsonify(new_comment), 201
 
 @app.route('/api/improve-text', methods=['POST'])
 def improve_text_endpoint():
-    data = request.get_json()
-    original_text = data.get('text')
-    if not original_text:
-        return jsonify({"error": "No text provided"}), 400
-    result = improve_text_with_ai(original_text)
+    result = improve_text_with_ai(request.get_json().get('text'))
     return jsonify(result)
 
-# --- Final change: Run with SocketIO ---
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5001, debug=True)
 
