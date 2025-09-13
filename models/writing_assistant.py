@@ -1,25 +1,11 @@
 import re
 
 def improve_text_with_ai(text: str) -> dict:
-    """
-    A placeholder AI model that performs simple grammar and style corrections.
-    - Capitalizes the first letter of the text.
-    - Ensures the text ends with a period.
-    - Replaces common text slang with formal equivalents.
-
-    Args:
-        text: The user-submitted string.
-
-    Returns:
-        A dictionary containing the improved text.
-    """
     if not isinstance(text, str) or not text:
         return {"improved_text": ""}
 
-    # Capitalize the first letter
     improved_text = text.strip().capitalize()
 
-    # Define common slang and their formal replacements
     replacements = {
         r'\br\b': 'are',
         r'\bu\b': 'you',
@@ -29,13 +15,13 @@ def improve_text_with_ai(text: str) -> dict:
         r'\btw\b': 'by the way',
         r'\bidk\b': 'I do not know',
         r'\bimo\b': 'in my opinion',
+        r'\blol\b': 'laugh out loud',  # New example
+        r'\bbrb\b': 'be right back',
     }
 
-    # Apply replacements using regular expressions for whole words
     for slang, formal in replacements.items():
         improved_text = re.sub(slang, formal, improved_text, flags=re.IGNORECASE)
 
-    # Ensure the text ends with a proper punctuation mark
     if not improved_text.endswith(('.', '!', '?')):
         improved_text += '.'
 

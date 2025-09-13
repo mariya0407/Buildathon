@@ -1,12 +1,7 @@
-# Backend
-Flask
-Flask-Cors
-hashlib
-Flask-SocketIO
-
-
-
-# AI & Machine Learning
-tensorflow
-nltk
-Pillow
+flask
+flask-cors
+flask-socketio
+pymongo
+werkzeug
+google-generativeai
+python-dotenv

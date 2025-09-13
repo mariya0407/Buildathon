@@ -3,81 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unfiltered - An Anonymous Feedback</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='90' font-weight='bold' fill='%23EAB308' font-family='Inter'>U</text></svg>">
+    <title>Buildathon</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='90' font-weight='bold' fill='%23EAB308' font-family='Inter'>B</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
         .blur-content { filter: blur(5px); user-select: none; }
+        .blur-content:hover::after { content: 'Click to reveal (staff only)'; position: absolute; background: rgba(0,0,0,0.7); color: white; padding: 4px; border-radius: 4px; }
         .modal { display: none; }
         .modal-active { display: flex; }
-        #notification {
-            transition: transform 0.3s ease-in-out;
-            transform: translateY(200%);
-        }
-        #notification.show {
-            transform: translateY(0);
-        }
+        #notification { transition: transform 0.3s ease-in-out; transform: translateY(200%); }
+        #notification.show { transform: translateY(0); }
         .vote-button.upvoted { color: #22C55E; }
         .vote-button.downvoted { color: #EF4444; }
-        .comments-section {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.5s ease-in-out;
-        }
-        .comments-section.expanded {
-            max-height: 1000px;
-        }
-        .profile-pic {
-            width: 128px;
-            height: 128px;
-            object-fit: cover;
-        }
-        .avatar-option {
-            cursor: pointer;
-            transition: transform 0.2s;
-            border: 3px solid transparent;
-        }
-        .avatar-option:hover {
-            transform: scale(1.05);
-        }
-        .avatar-option.selected {
-            border-color: #3B82F6;
-        }
-        #splash-screen {
-            position: fixed;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            transition: opacity 0.5s ease-out;
-        }
-        #splash-screen.fade-out {
-            animation: zoomOut 1.5s forwards;
-        }
-        #splash-screen h1 {
-            font-size: 4rem;
-            font-weight: bold;
-        }
-        @keyframes zoomOut {
-            0% { transform: scale(1); opacity: 1; }
-            100% { transform: scale(1.5); opacity: 0; visibility: hidden; }
-        }
-        #app-wrapper {
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity 0.5s ease-in;
-        }
-        #app-wrapper.visible {
-            visibility: visible;
-            opacity: 1;
-        }
+        .comments-section { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out; }
+        .comments-section.expanded { max-height: 2000px; }
+        .profile-pic { width: 128px; height: 128px; object-fit: cover; }
+        .avatar-option { cursor: pointer; transition: transform 0.2s; border: 3px solid transparent; }
+        .avatar-option:hover { transform: scale(1.05); }
+        .avatar-option.selected { border-color: #3B82F6; }
+        #splash-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 9999; transition: opacity 0.5s ease-out; }
+        #splash-screen.fade-out { animation: zoomOut 1.5s forwards; }
+        #splash-screen h1 { font-size: 4rem; font-weight: bold; }
+        @keyframes zoomOut { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; visibility: hidden; } }
+        #app-wrapper { visibility: hidden; opacity: 0; transition: opacity 0.5s ease-in; flex-grow: 1; }
+        #app-wrapper.visible { visibility: visible; opacity: 1; }
+        #summary-content h3 { font-size: 1.25rem; font-weight: bold; margin-top: 1rem; color: #111827; }
+        .dark #summary-content h3 { color: #fff; }
+        #summary-content ul { list-style-type: disc; margin-left: 1.5rem; margin-top: 0.5rem; }
+        .sort-btn.active, .profile-tab.active { background-color: #f59e0b; color: white; }
+        .dark .sort-btn.active, .dark .profile-tab.active { background-color: #d97706; }
+        .flair-btn.selected { background-color: #f59e0b; color: white; }
+        .dark .flair-btn.selected { background-color: #d97706; }
+        .poll-option { cursor: pointer; }
+        .poll-option.selected { background-color: #f59e0b; color: white; }
+        .dark .poll-option.selected { background-color: #d97706; }
     </style>
     <script>
-        // Auto-detects and applies system theme preference on initial load
         if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
         } else {
@@ -86,493 +51,1162 @@
     </script>
 </head>
 <body class="bg-gray-100 dark:bg-slate-900 transition-colors duration-300">
-
     <div id="splash-screen" class="bg-gray-100 dark:bg-slate-900">
-        <h1 class="text-yellow-500 dark:text-yellow-400">Unfiltered</h1>
+        <h1 class="text-yellow-500 dark:text-yellow-400">Buildathon</h1>
     </div>
-
     <div id="app-wrapper">
-        <!-- Header -->
-        <header class="bg-white dark:bg-slate-800 shadow-sm sticky top-0 z-40 dark:border-b dark:border-slate-700 transition-colors duration-300">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center py-3">
-                    <div class="flex-shrink-0">
-                        <a href="#" onclick="window.location.reload(); return false;" class="cursor-pointer" title="Reload page">
-                            <h1 class="text-2xl font-bold text-yellow-500 dark:text-yellow-400">Unfiltered</h1>
-                        </a>
-                    </div>
-                    <div class="flex-1 mx-4">
-                        <input id="search-input" type="search" placeholder="Search posts..." class="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-200 bg-gray-100 dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-gray-400 transition-colors duration-300">
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <!-- THEME TOGGLE BUTTON REMOVED -->
-                        <button id="login-button" class="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-full hover:bg-yellow-600">Login</button>
-                        <div id="user-controls" class="hidden items-center space-x-4">
-                            <button id="create-post-button" class="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600">Create Post</button>
-                            <div id="user-initial-circle" class="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center text-white font-bold text-lg cursor-pointer overflow-hidden"></div>
-                            <button id="logout-button" class="text-sm text-gray-600 hover:text-yellow-600 dark:text-gray-400 dark:hover:text-yellow-500">Logout</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-        <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 space-y-4" id="posts-container">
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400 transition-colors duration-300">Loading posts...</div>
-                </div>
-                <aside class="space-y-6">
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
-                        <h3 class="font-bold text-lg mb-2 dark:text-white">Community Guidelines</h3>
-                        <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                            <li>Be respectful, even when disagreeing.</li>
-                            <li>No hate speech or harassment.</li>
-                            <li>Keep discussions relevant to the institute.</li>
-                            <li>Tag your posts appropriately.</li>
-                            <li>AI moderation is active.</li>
-                        </ul>
-                    </div>
-                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
-                        <h3 class="font-bold text-lg mb-2 dark:text-white">Popular Tags</h3>
-                        <div class="flex flex-wrap gap-2">
-                            <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-300">#Exams</span>
-                            <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">#HostelLife</span>
-                            <span class="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-yellow-900 dark:text-yellow-300">#Placements</span>
-                            <span class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-indigo-900 dark:text-indigo-300">#Cafeteria</span>
-                        </div>
-                    </div>
-                </aside>
-            </div>
-        </main>
-
-        <main id="profile-page" class="hidden max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="bg-white dark:bg-slate-800 p-8 rounded-lg shadow text-center transition-colors duration-300">
-                <button id="back-to-feed-button" class="float-left text-sm text-yellow-600 hover:underline dark:text-yellow-500">&larr; Back to Feed</button>
-                <h2 class="text-3xl font-bold mb-6 dark:text-white">Your Profile</h2>
-                <div class="relative inline-block mb-4">
-                    <img id="profile-page-pic" src="https://placehold.co/128x128/805ad5/ffffff?text=S" class="profile-pic rounded-full mx-auto shadow-md">
-                    <button id="change-picture-button" class="absolute bottom-0 right-0 bg-yellow-500 text-white rounded-full h-8 w-8 flex items-center justify-center hover:bg-yellow-600 shadow-sm" title="Change profile picture">
-                        ✏️
-                    </button>
-                </div>
-                <p id="profile-email" class="text-xl font-semibold text-gray-800 dark:text-gray-200"></p>
-            </div>
-        </main>
+        <header class="bg-white dark:bg-slate-800 shadow-sm sticky top-0 z-40 dark:border-b dark:border-slate-700 transition-colors duration-300"></header>
+        <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full"></main>
+        <footer class="text-center py-8 mt-auto"></footer>
     </div>
-
     <!-- Modals -->
-    <div id="login-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
-        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md transition-colors duration-300">
-            <h2 class="text-2xl font-bold mb-4 dark:text-white">Login to Buildathon</h2>
-            <form id="login-form">
-                <div class="mb-4">
-                    <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
-                    <input type="email" id="email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="student@student.edu">
-                </div>
-                <div class="mb-6">
-                    <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-                    <input type="password" id="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="password123 or password456">
-                </div>
-                <div id="login-error" class="text-red-500 text-sm mb-4 hidden"></div>
-                <div class="flex items-center justify-between">
-                    <button type="button" id="close-login-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
-                    <button type="submit" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Login</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    <div id="create-post-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
-        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl transition-colors duration-300">
-            <h2 class="text-2xl font-bold mb-4 dark:text-white">Create a New Post</h2>
-            <form id="create-post-form">
-                <div class="mb-4">
-                    <label for="post-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
-                    <input type="text" id="post-title" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500 focus:border-yellow-500">
-                </div>
-                <div class="mb-4">
-                    <label for="post-content" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Content</label>
-                    <textarea id="post-content" rows="6" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500 focus:border-yellow-500"></textarea>
-                </div>
-                <div class="flex items-center justify-between">
-                    <button type="button" id="close-post-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
-                    <div>
-                        <button type="button" id="improve-ai-button" class="px-4 py-2 mr-2 border border-yellow-500 text-yellow-600 font-semibold rounded-lg hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 dark:hover:bg-slate-700">Improve with AI ✨</button>
-                        <button type="submit" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Post</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-    <div id="change-picture-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50">
-        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl transition-colors duration-300">
-            <h2 class="text-2xl font-bold mb-4 dark:text-white">Change Profile Picture</h2>
-            <div class="mb-6">
-                <h3 class="font-semibold mb-2 dark:text-gray-200">Choose an Avatar</h3>
-                <div id="avatar-selection" class="grid grid-cols-7 gap-4"></div>
-            </div>
-            <div class="flex items-center justify-end mt-8 space-x-4">
-                <button type="button" id="close-picture-modal" class="text-gray-600 hover:text-gray-800 dark:text-gray-400">Cancel</button>
-                <button type="button" id="save-picture-button" class="px-6 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600">Done</button>
-            </div>
-        </div>
-    </div>
+    <div id="login-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="register-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="create-post-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="change-picture-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="summary-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="delete-confirm-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 items-center justify-center z-50"></div>
+    <div id="notification" class="fixed bottom-5 right-5 text-white py-3 px-6 rounded-lg shadow-lg"></div>
 
-    <div id="notification" class="fixed bottom-5 right-5 bg-green-600 text-white py-3 px-6 rounded-lg shadow-lg"></div>
+    <script>
+        const API_URL = 'http://127.0.0.1:5001';
+        const socket = io(API_URL);
 
-    <footer class="text-center py-8">
-        <p class="text-sm text-gray-500 dark:text-gray-400">© 2025 Unfiltered. All Rights Reserved.</p>
-    </footer>
+        // Utility: Escape HTML to prevent XSS
+        const escapeHtml = (unsafe) => {
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        };
 
-<script>
-    const API_URL = 'http://127.0.0.1:5001';
-    const socket = io(API_URL);
+        // Utility: Safe JSON parse
+        const safeJSON = async (response) => {
+            try { return await response.json(); } catch { return {}; }
+        };
 
-    // --- DOM Elements ---
-    const splashScreen = document.getElementById('splash-screen');
-    const appWrapper = document.getElementById('app-wrapper');
-    const searchInput = document.getElementById('search-input');
-    const mainContent = document.getElementById('main-content');
-    const profilePage = document.getElementById('profile-page');
-    const postsContainer = document.getElementById('posts-container');
-    const loginButton = document.getElementById('login-button');
-    const userControls = document.getElementById('user-controls');
-    const logoutButton = document.getElementById('logout-button');
-    const userInitialCircle = document.getElementById('user-initial-circle');
-    const loginModal = document.getElementById('login-modal');
-    const backToFeedButton = document.getElementById('back-to-feed-button');
-    const profilePagePic = document.getElementById('profile-page-pic');
-    const profileEmail = document.getElementById('profile-email');
-    const changePictureButton = document.getElementById('change-picture-button');
-    const changePictureModal = document.getElementById('change-picture-modal');
-    const closePictureModal = document.getElementById('close-picture-modal');
-    const savePictureButton = document.getElementById('save-picture-button');
-    const avatarSelection = document.getElementById('avatar-selection');
-    const createPostButton = document.getElementById('create-post-button');
-    const createPostModal = document.getElementById('create-post-modal');
-    const closePostModal = document.getElementById('close-post-modal');
-    const createPostForm = document.getElementById('create-post-form');
-    const improveAIButton = document.getElementById('improve-ai-button');
-    const postContentInput = document.getElementById('post-content');
-    const closeLoginModal = document.getElementById('close-login-modal');
-    const loginForm = document.getElementById('login-form');
-    const loginError = document.getElementById('login-error');
-    const notification = document.getElementById('notification');
-    
-    // --- State Variables ---
-    let userSession = null;
-    let tempProfilePic = null;
-    let allPosts = [];
-    
-    // --- Real-time Logic ---
-    socket.on('connect', () => console.log('Connected to real-time server!'));
-    socket.on('new_post', () => { showNotification('A new post was just created!', 'info'); fetchPosts(); });
-    socket.on('post_update', () => { fetchPosts(); });
-
-    // --- Dynamic Avatar Generation ---
-    function populateAvatars() {
-        avatarSelection.innerHTML = '';
-        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-        const colors = ['ef4444', 'f97316', 'eab308', '84cc16', '22c55e', '14b8a6', '06b6d4', '3b82f6', '8b5cf6', 'd946ef'];
-        alphabet.forEach((letter, index) => {
-            const color = colors[index % colors.length];
-            const src = `https://placehold.co/64x64/${color}/FFFFFF?text=${letter}`;
-            const img = document.createElement('img');
-            img.src = src;
-            img.className = 'w-16 h-16 rounded-full avatar-option';
-            img.onclick = () => selectAvatar(img, src);
-            avatarSelection.appendChild(img);
+        // Utility: Auth headers
+        const authHeaders = () => ({
+            'Content-Type': 'application/json',
+            'X-User-Id': userSession?.token,
+            'X-User-Role': userSession?.role
         });
-    }
 
-    // --- Navigation, Authentication, Profile Picture, etc. ---
-    function showProfilePage() {
-        mainContent.classList.add('hidden');
-        profilePage.classList.remove('hidden');
-        profileEmail.textContent = userSession.email;
-        profilePagePic.src = userSession.profilePicture || `https://placehold.co/128x128/eab308/ffffff?text=${userSession.email.charAt(0).toUpperCase()}`;
-    }
-    
-    function showFeed() {
-        profilePage.classList.add('hidden');
-        mainContent.classList.remove('hidden');
-    }
+        const debounce = (func, wait) => {
+            let timeout;
+            return (...args) => {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        };
 
-    function checkLoginState() {
-        const storedSession = localStorage.getItem('buildathon_session');
-        if (storedSession) {
-            userSession = JSON.parse(storedSession);
-            showLoggedInUI();
-        } else {
-            showLoggedOutUI();
-        }
-        fetchPosts();
-    }
-
-    function showLoggedInUI() {
-        loginButton.classList.add('hidden');
-        userControls.classList.remove('hidden');
-        userControls.classList.add('flex');
-        if (userSession.profilePicture) {
-            userInitialCircle.innerHTML = `<img src="${userSession.profilePicture}" class="w-full h-full object-cover rounded-full">`;
-        } else {
-            userInitialCircle.innerHTML = `<span>${userSession.email.charAt(0).toUpperCase()}</span>`;
-        }
-    }
-
-    function showLoggedOutUI() {
-        loginButton.classList.remove('hidden');
-        userControls.classList.add('hidden');
-        userControls.classList.remove('flex');
-    }
-
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        loginError.classList.add('hidden');
-        try {
-            const response = await fetch(`${API_URL}/api/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
+        // Utility: Close modals on outside click
+        const addModalCloseListener = (modal) => {
+            modal.addEventListener('click', e => {
+                if (e.target === modal) modal.classList.remove('modal-active');
             });
-            if (!response.ok) throw new Error('Invalid credentials');
-            const data = await response.json();
-            userSession = { token: data.token, role: data.role, email: data.email, profilePicture: null };
-            localStorage.setItem('buildathon_session', JSON.stringify(userSession));
-            loginModal.classList.remove('modal-active');
-            loginForm.reset();
+        };
+
+        let userSession = null; // { token, role, username, email, picture }
+        let tempProfilePic = null;
+        let allPosts = [];
+        let currentSort = 'new';
+        let currentFlairFilter = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // App state
+
+            // DOM refs
+            const splashScreen = document.getElementById('splash-screen');
+            const appWrapper = document.getElementById('app-wrapper');
+            const header = document.querySelector('header');
+            const mainContent = document.getElementById('main-content');
+            const footer = document.querySelector('footer');
+            const loginModal = document.getElementById('login-modal');
+            const registerModal = document.getElementById('register-modal');
+            const createPostModal = document.getElementById('create-post-modal');
+            const changePictureModal = document.getElementById('change-picture-modal');
+            const summaryModal = document.getElementById('summary-modal');
+            const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+            const notification = document.getElementById('notification');
+
+            // Populate static HTML
+            header.innerHTML = `
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex justify-between items-center py-3 flex-nowrap">
+                        <div class="flex-shrink-0">
+                            <a href="#" id="brand-reload" class="cursor-pointer" title="Reload page">
+                                <h1 class="text-2xl font-bold text-yellow-500 dark:text-yellow-400">Buildathon</h1>
+                            </a>
+                        </div>
+                        <div class="mx-4 flex-1">
+                            <div class="relative">
+                                <input id="search-input" type="search" placeholder="Search posts..." 
+                                    class="w-72 focus:w-96 px-9 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-yellow-500 
+                                        bg-gray-100 dark:bg-slate-700 dark:border-slate-600 dark:text-white 
+                                        dark:placeholder-gray-400 transition-all duration-300 ease-in-out">
+                                <button id="clear-search" 
+                                    class="absolute right-2 top-1/2 transform -translate-y-1/2 
+                                        text-gray-500 dark:text-gray-400 hidden">✕</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <button id="verify-blockchain" 
+                                class="hidden px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600">
+                                Verify
+                            </button>
+                            <button id="summarize-button" 
+                                class="hidden px-4 py-2 text-sm font-medium text-white bg-purple-500 rounded-full hover:bg-purple-600">
+                                Summarize
+                            </button>
+                            <button id="login-button" 
+                                class="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-full hover:bg-yellow-600">
+                                Login
+                            </button>
+                            <div id="user-controls" class="hidden flex items-center space-x-3">
+                                <button id="create-post-button" 
+                                    class="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-full hover:bg-yellow-600">
+                                    Create Post
+                                </button>
+                                <div id="user-initial-circle" 
+                                    class="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center 
+                                        text-white font-bold text-base cursor-pointer overflow-hidden">
+                                </div>
+                                <button id="logout-button" 
+                                    class="text-sm text-gray-600 hover:text-yellow-600 
+                                        dark:text-gray-400 dark:hover:text-yellow-500">
+                                    Logout
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+
+            mainContent.innerHTML = `
+                <div id="feed-content" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 space-y-4">
+                        <div class="bg-white dark:bg-slate-800 p-3 rounded-lg shadow flex justify-between items-center flex-wrap gap-4">
+                            <div>
+                                <span class="font-semibold dark:text-white mr-2">Sort by:</span>
+                                <button id="sort-new-btn" class="sort-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700 dark:text-gray-300 dark:hover:bg-slate-600">New</button>
+                                <button id="sort-hot-btn" class="sort-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700 dark:text-gray-300 dark:hover:bg-slate-600">Hot</button>
+                            </div>
+                            <div id="flair-filter-display" class="hidden items-center">
+                                <span class="text-sm dark:text-gray-300 mr-2">Filtering by: <span id="current-flair-tag" class="font-semibold bg-gray-200 dark:bg-slate-700 px-2 py-0.5 rounded-full"></span></span>
+                                <button id="clear-flair-filter" class="text-sm text-red-500 hover:underline">Clear</button>
+                            </div>
+                        </div>
+                        <div id="posts-container" class="space-y-4"></div>
+                    </div>
+                    <aside class="space-y-6">
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
+                            <h3 class="font-bold text-lg mb-2 dark:text-white">Community Guidelines</h3>
+                            <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                                <li>Be respectful to all users.</li>
+                                <li>AI moderation flags offensive content automatically.</li>
+                                <li>Use flairs to categorize posts.</li>
+                            </ul>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300">
+                            <h3 class="font-bold text-lg mb-2 dark:text-white">Popular Tags</h3>
+                            <div class="flex flex-wrap gap-2">
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-blue-900 dark:text-blue-300 cursor-pointer" data-flair="Complaint">#Complaint</span>
+                                <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300 cursor-pointer" data-flair="Appreciation">#Appreciation</span>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+                <div id="profile-content" class="hidden max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full"></div>`;
+            footer.innerHTML = `<p class="text-sm text-gray-500 dark:text-gray-400">© 2025 Buildathon. All Rights Reserved.</p>`;
+
+            // Re-query dynamic elements
+            const searchInput = document.getElementById('search-input');
+            const clearSearch = document.getElementById('clear-search');
+            const postsContainer = document.getElementById('posts-container');
+            const loginButton = document.getElementById('login-button');
+            const userControls = document.getElementById('user-controls');
+            const logoutButton = document.getElementById('logout-button');
+            const userInitialCircle = document.getElementById('user-initial-circle');
+            const summarizeButton = document.getElementById('summarize-button');
+            const createPostButton = document.getElementById('create-post-button');
+            const sortNewBtn = document.getElementById('sort-new-btn');
+            const sortHotBtn = document.getElementById('sort-hot-btn');
+            const flairFilterDisplay = document.getElementById('flair-filter-display');
+            const currentFlairTag = document.getElementById('current-flair-tag');
+            const clearFlairFilter = document.getElementById('clear-flair-filter');
+            const brandReload = document.getElementById('brand-reload');
+            const verifyBlockchain = document.getElementById('verify-blockchain');
+            const feedContent = document.getElementById('feed-content');
+            const profileContent = document.getElementById('profile-content');
+
+            // Utility UI helpers
+            const showNotification = (message, type = 'info') => {
+                notification.textContent = message;
+                notification.className = 'fixed bottom-5 right-5 text-white py-3 px-6 rounded-lg shadow-lg';
+                notification.classList.add(type === 'info' ? 'bg-yellow-500' : 'bg-red-500');
+                notification.classList.add('show');
+                setTimeout(() => notification.classList.remove('show'), 3000);
+            };
+
+            // Core functions
+            const applyFiltersAndSort = () => {
+                let postsToRender = [...allPosts];
+                if (currentFlairFilter) {
+                    postsToRender = postsToRender.filter(post => (post.flair || 'General') === currentFlairFilter);
+                    flairFilterDisplay.classList.remove('hidden');
+                    flairFilterDisplay.classList.add('flex');
+                    currentFlairTag.textContent = currentFlairFilter;
+                } else {
+                    flairFilterDisplay.classList.add('hidden');
+                }
+                const searchTerm = searchInput.value.trim().toLowerCase();
+                if (searchTerm) {
+                    postsToRender = postsToRender.filter(post => 
+                        (post.title || '').toLowerCase().includes(searchTerm) || 
+                        (post.content || '').toLowerCase().includes(searchTerm) || 
+                        (post.author || '').toLowerCase().includes(searchTerm)
+                    );
+                    clearSearch.classList.remove('hidden');
+                } else {
+                    clearSearch.classList.add('hidden');
+                }
+                if (currentSort === 'new') {
+                    postsToRender.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    sortNewBtn.classList.add('active');
+                    sortHotBtn.classList.remove('active');
+                } else if (currentSort === 'hot') {
+                    postsToRender.sort((a, b) => ((b.upvotes || 0) - (b.downvotes || 0)) - ((a.upvotes || 0) - (a.downvotes || 0)));
+                    sortHotBtn.classList.add('active');
+                    sortNewBtn.classList.remove('active');
+                }
+                renderPosts(postsToRender);
+            };
+
+            const fetchPosts = async () => {
+                postsContainer.innerHTML = `<div id="loading" class="text-center py-4 dark:text-gray-400">Loading...</div>`;
+                try {
+                    const headers = authHeaders();
+                    const params = new URLSearchParams();
+                    if (currentSort) params.append('sort', currentSort);
+                    if (currentFlairFilter) params.append('flair', currentFlairFilter);
+                    const response = await fetch(`${API_URL}/api/posts?${params.toString()}`, { headers, cache: 'no-cache' });
+                    if (!response.ok) {
+                        const error = await safeJSON(response);
+                        throw new Error(error.error || 'Network error');
+                    }
+                    allPosts = await response.json();
+                    applyFiltersAndSort();
+                } catch (error) {
+                    console.error(error);
+                    postsContainer.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center text-red-500">${escapeHtml(error.message || 'Failed to load posts.')}</div>`;
+                }
+            };
+
+            const renderPosts = (posts, container = postsContainer) => {
+                const openPostId = document.querySelector('.comments-section.expanded')?.id.split('-')[2];
+                if (posts.length === 0) {
+                    container.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400">${searchInput.value ? 'No results found for "' + escapeHtml(searchInput.value) + '".' : 'No posts yet.'}</div>`;
+                    return;
+                }
+                container.innerHTML = '';
+                posts.forEach(post => {
+                    const postElement = document.createElement('div');
+                    postElement.className = 'bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300';
+                    const upvotedClass = post.user_vote === 'up' ? 'upvoted' : '';
+                    const downvotedClass = post.user_vote === 'down' ? 'downvoted' : '';
+                    const mediaClasses = post.is_moderated ? 'blur-content' : '';
+                    const postImageHTML = post.imageUrl ? `<img src="${post.imageUrl}" class="mt-4 rounded-lg max-h-96 w-full object-cover ${mediaClasses}">` : '';
+                    const postVideoHTML = post.videoUrl ? `<video src="${post.videoUrl}" class="mt-4 rounded-lg max-h-96 w-full ${mediaClasses}" controls></video>` : '';
+                    const postLinkHTML = post.linkUrl ? `<a href="${post.linkUrl}" target="_blank" class="mt-4 text-blue-500 hover:underline dark:text-blue-400">${escapeHtml(post.linkUrl)}</a>` : '';
+                    const pollHTML = post.pollOptions?.length ? `
+                        <div class="mt-4">
+                            <h4 class="font-semibold dark:text-white">Poll</h4>
+                            <div class="space-y-2">
+                                ${post.pollOptions.map((opt, i) => `
+                                    <button class="poll-option w-full text-left px-3 py-2 bg-gray-200 dark:bg-slate-700 rounded ${userSession ? '' : 'cursor-not-allowed'} ${post.user_poll_vote === i ? 'selected' : ''} ${post.user_poll_vote !== null ? 'cursor-not-allowed' : ''}" data-post-id="${post.id}" data-option-index="${i}" ${userSession && post.user_poll_vote === null ? '' : 'disabled'}>
+                                        ${escapeHtml(opt.option)} (${opt.votes || 0} votes)
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>` : '';
+                    const deleteButtonHTML = (userSession && post.author_id === userSession.token) ? `<button class="delete-post-btn text-xs text-red-500 hover:underline ml-4" data-post-id="${post.id}">Delete</button>` : '';
+                    const shareButtonHTML = `<button class="share-post-btn text-xs text-blue-500 hover:underline ml-4" data-post-id="${post.id}">Share</button>`;
+                    postElement.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="flair-tag cursor-pointer bg-gray-200 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-slate-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-600">${post.flair || 'General'}</span>
+                                <h2 class="text-xl font-bold mt-2 dark:text-white">${escapeHtml(post.title)}</h2>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Posted by ${userSession?.role === 'staff' ? 'ANONYMOUS' : escapeHtml(post.author)}</p>
+                            </div>
+                            <div class="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
+                                <button data-post-id="${post.id}" data-direction="up" class="vote-button hover:text-green-500 text-xl ${upvotedClass}">▲</button>
+                                <span class="font-bold text-lg dark:text-white">${(post.upvotes || 0) - (post.downvotes || 0)}</span>
+                                <button data-post-id="${post.id}" data-direction="down" class="vote-button hover:text-red-500 text-xl ${downvotedClass}">▼</button>
+                            </div>
+                        </div>
+                        ${post.is_moderated ? `<p class="text-xs text-red-500 mb-2">Flagged for review.</p>` : ''}
+                        <div class="${post.is_moderated ? 'blur-content' : ''} mt-2 text-gray-700 dark:text-gray-300">${marked.parse(escapeHtml(post.content))}</div>
+                        ${postImageHTML}
+                        ${postVideoHTML}
+                        ${postLinkHTML}
+                        ${pollHTML}
+                        <div class="mt-4 pt-2 border-t border-gray-100 dark:border-slate-700">
+                            <button class="comments-toggle-button text-sm text-gray-600 hover:text-yellow-600 font-semibold dark:text-gray-400 dark:hover:text-yellow-500" data-post-id="${post.id}">${(post.comments?.length || 0)} comments</button>
+                            ${deleteButtonHTML}
+                            ${shareButtonHTML}
+                        </div>
+                        <div id="comments-section-${post.id}" class="comments-section pl-4 mt-2"></div>`;
+                    container.appendChild(postElement);
+                });
+                container.querySelectorAll('.vote-button').forEach(b => b.onclick = e => handleVote(e.currentTarget.dataset.postId, e.currentTarget.dataset.direction));
+                container.querySelectorAll('.comments-toggle-button').forEach(b => b.onclick = e => toggleComments(e.currentTarget.dataset.postId));
+                container.querySelectorAll('.flair-tag').forEach(tag => {
+                    tag.onclick = (e) => {
+                        currentFlairFilter = e.target.textContent;
+                        applyFiltersAndSort();
+                    };
+                });
+                container.querySelectorAll('.delete-post-btn').forEach(btn => btn.onclick = (e) => confirmDelete('post', { postId: e.currentTarget.dataset.postId }));
+                container.querySelectorAll('.share-post-btn').forEach(btn => btn.onclick = (e) => handleShare(e.currentTarget.dataset.postId));
+                container.querySelectorAll('.poll-option').forEach(btn => btn.onclick = (e) => handlePollVote(e.currentTarget.dataset.postId, e.currentTarget.dataset.optionIndex));
+                if (openPostId) {
+                    const commentsSection = document.getElementById(`comments-section-${openPostId}`);
+                    if (commentsSection) {
+                        fetchAndRenderComments(openPostId);
+                        commentsSection.classList.add('expanded');
+                    }
+                }
+                if (userSession?.role === 'staff') {
+                    container.querySelectorAll('.blur-content').forEach(el => {
+                        el.onclick = () => el.classList.toggle('blur-content');
+                    });
+                }
+                // Add handlers for popular tags
+                document.querySelectorAll('aside [data-flair]').forEach(tag => {
+                    tag.onclick = () => {
+                        currentFlairFilter = tag.dataset.flair;
+                        applyFiltersAndSort();
+                    };
+                });
+            };
+
+            // Voting
+            const handleVote = async (postId, direction) => {
+                if (!postId) return;
+                if (!userSession) { showNotification('Please log in to vote.', 'error'); return; }
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/vote`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ direction })
+                    });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Vote failed');
+                    socket.emit('post:updated');
+                } catch (error) {
+                    showNotification(error.message || 'Failed to vote', 'error');
+                }
+            };
+
+            // Comment Voting
+            const handleCommentVote = async (postId, commentId, direction) => {
+                if (!userSession) { showNotification('Please log in to vote.', 'error'); return; }
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/comments/${commentId}/vote`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ direction })
+                    });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Comment vote failed');
+                    socket.emit('post:updated');
+                } catch (error) {
+                    showNotification(error.message || 'Failed to vote on comment', 'error');
+                }
+            };
+
+            // Poll Voting
+            const handlePollVote = async (postId, optionIndex) => {
+                if (!userSession) { showNotification('Please log in to vote.', 'error'); return; }
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/poll`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ optionIndex: parseInt(optionIndex) })
+                    });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Poll vote failed');
+                    socket.emit('post:updated');
+                } catch (error) {
+                    showNotification(error.message || 'Failed to vote on poll', 'error');
+                }
+            };
+
+            // Share
+            const handleShare = async (postId) => {
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/share`, { headers: authHeaders() });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Share failed');
+                    const { share_url } = await response.json();
+                    const fullUrl = `${window.location.origin}${share_url}`;
+                    navigator.clipboard.writeText(fullUrl);
+                    showNotification('Share link copied to clipboard');
+                } catch (error) {
+                    showNotification(error.message || 'Failed to share', 'error');
+                }
+            };
+
+            // Comments
+            const toggleComments = async (postId) => {
+                const commentsSection = document.getElementById(`comments-section-${postId}`);
+                if (!commentsSection) return;
+                const isExpanded = commentsSection.classList.contains('expanded');
+                if (!isExpanded) {
+                    await fetchAndRenderComments(postId);
+                }
+                commentsSection.classList.toggle('expanded');
+            };
+
+            const fetchAndRenderComments = async (postId) => {
+                const commentsSection = document.getElementById(`comments-section-${postId}`);
+                commentsSection.innerHTML = `<div class="text-sm text-gray-500 dark:text-gray-400 p-4">Loading...</div>`;
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/comments`, { headers: authHeaders() });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Failed to load comments');
+                    const comments = await response.json();
+                    let commentsHTML = comments.length > 0 ? comments.map(c => `
+                        <div class="border-t border-gray-100 dark:border-slate-700 py-3">
+                            <p class="text-sm font-semibold text-gray-600 dark:text-gray-300">${userSession?.role === 'staff' ? 'ANONYMOUS' : escapeHtml(c.author)}</p>
+                            <p class="text-gray-800 dark:text-gray-200">${marked.parse(escapeHtml(c.content))}</p>
+                            <div class="flex items-center space-x-2 text-gray-500 dark:text-gray-400 mt-1">
+                                <button data-post-id="${postId}" data-comment-id="${c.comment_id}" data-direction="up" class="vote-button hover:text-green-500 text-sm ${c.user_vote === 'up' ? 'upvoted' : ''}">▲</button>
+                                <span class="text-sm">${(c.upvotes || 0) - (c.downvotes || 0)}</span>
+                                <button data-post-id="${postId}" data-comment-id="${c.comment_id}" data-direction="down" class="vote-button hover:text-red-500 text-sm ${c.user_vote === 'down' ? 'downvoted' : ''}">▼</button>
+                                ${(userSession && c.author_id === userSession.token) ? `<button class="delete-comment-btn text-xs text-red-500 hover:underline ml-2" data-post-id="${postId}" data-comment-id="${c.comment_id}">Delete</button>` : ''}
+                            </div>
+                        </div>`).join('') : '<p class="text-sm text-gray-500 dark:text-gray-400 py-3">No comments yet.</p>';
+                    if (userSession) {
+                        commentsHTML += `
+                            <form class="add-comment-form mt-4" data-post-id="${postId}">
+                                <textarea class="w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white" required placeholder="Add a comment..."></textarea>
+                                <button type="submit" class="mt-2 px-4 py-1 bg-yellow-500 text-white text-sm rounded-md hover:bg-yellow-600">Comment</button>
+                            </form>`;
+                    }
+                    commentsSection.innerHTML = commentsHTML;
+                    commentsSection.querySelectorAll('.add-comment-form').forEach(form => form.addEventListener('submit', handlePostComment));
+                    commentsSection.querySelectorAll('.delete-comment-btn').forEach(btn => btn.onclick = (e) => confirmDelete('comment', e.currentTarget.dataset));
+                    commentsSection.querySelectorAll('.vote-button').forEach(btn => btn.onclick = (e) => handleCommentVote(e.currentTarget.dataset.postId, e.currentTarget.dataset.commentId, e.currentTarget.dataset.direction));
+                } catch (error) {
+                    commentsSection.innerHTML = `<div class="text-sm text-red-500 p-4">${escapeHtml(error.message || 'Failed to load comments.')}</div>`;
+                }
+            };
+
+            const handlePostComment = async (event) => {
+                event.preventDefault();
+                if (!userSession) { showNotification('Please log in to comment.', 'error'); return; }
+                const postId = event.target.dataset.postId;
+                const textarea = event.target.querySelector('textarea');
+                try {
+                    const response = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ content: textarea.value })
+                    });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Failed to comment');
+                    textarea.value = '';
+                    socket.emit('post:updated');
+                    fetchAndRenderComments(postId);
+                } catch (error) {
+                    showNotification(error.message || 'Failed to post comment', 'error');
+                }
+            };
+
+            // Avatars & Profile Picture
+            const populateAvatars = (containerId = 'change-picture-modal-body') => {
+                const avatars = [
+                    'https://api.dicebear.com/7.x/initials/svg?seed=Alpha',
+                    'https://api.dicebear.com/7.x/initials/svg?seed=Beta',
+                    'https://api.dicebear.com/7.x/initials/svg?seed=Gamma',
+                    'https://api.dicebear.com/7.x/identicon/svg?seed=User1',
+                    'https://api.dicebear.com/7.x/avataaars/svg?seed=StudentA',
+                    'https://api.dicebear.com/7.x/croodles/svg?seed=StudentB'
+                ];
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                container.innerHTML = '<div class="grid grid-cols-3 gap-3">';
+                avatars.forEach(src => {
+                    container.innerHTML += `<img src="${src}" class="avatar-option w-20 h-20 rounded-md object-cover" data-src="${src}" />`;
+                });
+                container.innerHTML += '</div>';
+                container.querySelectorAll('.avatar-option').forEach(el => el.onclick = (e) => selectAvatar(e.currentTarget, e.currentTarget.dataset.src));
+            };
+
+            const selectAvatar = (element, src) => {
+                document.querySelectorAll('.avatar-option').forEach(a => a.classList.remove('selected'));
+                element.classList.add('selected');
+                tempProfilePic = src;
+            };
+
+            const updateUserPicture = async () => {
+                if (!userSession) { showNotification('Login to change picture', 'error'); return; }
+                if (!tempProfilePic) { showNotification('Select an avatar', 'error'); return; }
+                try {
+                    const res = await fetch(`${API_URL}/api/users/${userSession.token}/picture`, {
+                        method: 'PUT',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ picture: tempProfilePic })
+                    });
+                    if (!res.ok) throw new Error((await safeJSON(res)).error || 'Failed to update picture');
+                    userSession.picture = tempProfilePic;
+                    localStorage.setItem('buildathon_session', JSON.stringify(userSession));
+                    showLoggedInUI();
+                    changePictureModal.classList.remove('modal-active');
+                    showNotification('Profile picture updated');
+                    socket.emit('user:updated', { userId: userSession.token });
+                } catch (err) {
+                    showNotification(err.message || 'Could not update picture', 'error');
+                }
+            };
+
+            // Profile Page
+            const showProfilePage = async () => {
+                feedContent.classList.add('hidden');
+                profileContent.classList.remove('hidden');
+                profileContent.innerHTML = `<div class="text-center dark:text-gray-300">Loading profile...</div>`;
+                try {
+                    const response = await fetch(`${API_URL}/api/users/${userSession.token}/profile`, { headers: authHeaders() });
+                    if (!response.ok) throw new Error((await safeJSON(response)).error || 'Failed to load profile');
+                    const profileData = await response.json();
+                    profileContent.innerHTML = `
+                        <div class="bg-white dark:bg-slate-800 p-8 rounded-lg shadow text-center transition-colors duration-300">
+                            <button id="back-to-feed-button" class="float-left text-sm text-yellow-600 hover:underline dark:text-yellow-500">&larr; Back to Feed</button>
+                            <h2 class="text-3xl font-bold mb-6 dark:text-white">Your Profile</h2>
+                            <div class="relative inline-block mb-4">
+                                <img id="profile-page-pic" src="${profileData.profilePicture || `https://placehold.co/128x128/eab308/ffffff?text=${profileData.username?.charAt(0)?.toUpperCase() || 'U'}`}" class="profile-pic rounded-full mx-auto shadow-md">
+                                <button id="change-picture-button" class="absolute bottom-0 right-0 bg-yellow-500 text-white rounded-full h-8 w-8 flex items-center justify-center hover:bg-yellow-600 shadow-sm">✏️</button>
+                            </div>
+                            <p id="profile-username" class="text-xl font-semibold text-gray-800 dark:text-gray-200">${escapeHtml(profileData.username || profileData.email)}</p>
+                            <div class="mt-4 text-lg dark:text-gray-300">Total Karma: <span id="total-upvotes" class="font-bold text-yellow-500">${profileData.totalUpvotes || 0}</span></div>
+                        </div>
+                        <div class="mt-8">
+                            <div class="border-b border-gray-200 dark:border-slate-700 mb-4">
+                                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                                    <button id="profile-posts-tab" class="profile-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-500 active">My Posts</button>
+                                    <button id="profile-comments-tab" class="profile-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200">My Comments</button>
+                                </nav>
+                            </div>
+                            <div id="profile-posts-content" class="space-y-4"></div>
+                            <div id="profile-comments-content" class="hidden space-y-4"></div>
+                        </div>`;
+                    renderPosts(profileData.posts, document.getElementById('profile-posts-content'));
+                    renderProfileComments(profileData.comments);
+                    document.getElementById('back-to-feed-button').addEventListener('click', showFeed);
+                    document.getElementById('change-picture-button').addEventListener('click', () => {
+                        changePictureModal.classList.add('modal-active');
+                        populateAvatars();
+                    });
+                    document.getElementById('profile-posts-tab').onclick = () => switchProfileTab('posts');
+                    document.getElementById('profile-comments-tab').onclick = () => switchProfileTab('comments');
+                } catch (error) {
+                    profileContent.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center text-red-500">${escapeHtml(error.message || 'Failed to load profile.')}</div>`;
+                }
+            };
+
+            const showFeed = () => {
+                feedContent.classList.remove('hidden');
+                profileContent.classList.add('hidden');
+                fetchPosts();
+            };
+
+            const switchProfileTab = (tab) => {
+                const postsContent = document.getElementById('profile-posts-content');
+                const commentsContent = document.getElementById('profile-comments-content');
+                const postsTab = document.getElementById('profile-posts-tab');
+                const commentsTab = document.getElementById('profile-comments-tab');
+                if (tab === 'posts') {
+                    postsContent.classList.remove('hidden');
+                    commentsContent.classList.add('hidden');
+                    postsTab.classList.add('active', 'border-yellow-500', 'text-yellow-600');
+                    commentsTab.classList.remove('active', 'border-yellow-500', 'text-yellow-600');
+                } else {
+                    postsContent.classList.add('hidden');
+                    commentsContent.classList.remove('hidden');
+                    postsTab.classList.remove('active', 'border-yellow-500', 'text-yellow-600');
+                    commentsTab.classList.add('active', 'border-yellow-500', 'text-yellow-600');
+                }
+            };
+
+            const renderProfileComments = (comments) => {
+                const container = document.getElementById('profile-comments-content');
+                if (comments.length === 0) {
+                    container.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400">You haven't made any comments yet.</div>`;
+                    return;
+                }
+                container.innerHTML = comments.map(comment => `
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
+                        <p class="text-gray-500 dark:text-gray-400 text-sm">You commented on: <a href="#" class="text-yellow-600 hover:underline" data-post-id="${comment.parent_post_id}">${escapeHtml(comment.parent_post_title)}</a></p>
+                        <p class="mt-2 dark:text-gray-200">${marked.parse(escapeHtml(comment.content))}</p>
+                        <button class="delete-comment-btn text-xs text-red-500 hover:underline mt-2" data-post-id="${comment.parent_post_id}" data-comment-id="${comment.comment_id}">Delete</button>
+                    </div>
+                `).join('');
+                container.querySelectorAll('.delete-comment-btn').forEach(btn => btn.onclick = (e) => confirmDelete('comment', e.currentTarget.dataset));
+                container.querySelectorAll('a[data-post-id]').forEach(link => {
+                    link.onclick = (e) => {
+                        e.preventDefault();
+                        showFeed();
+                        const postId = e.currentTarget.dataset.postId;
+                        const commentsSection = document.getElementById(`comments-section-${postId}`);
+                        if (commentsSection) {
+                            fetchAndRenderComments(postId);
+                            commentsSection.classList.add('expanded');
+                        }
+                    };
+                });
+            };
+
+            // Create Post
+            const sendPostData = async (title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, useAiAssistant) => {
+                if (!userSession) { showNotification('Login to post', 'error'); return { ok: false }; }
+                try {
+                    const payload = { title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, use_ai_assistant: useAiAssistant };
+                    const res = await fetch(`${API_URL}/api/posts`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) {
+                        const body = await safeJSON(res);
+                        throw new Error(body.error || 'Failed to create post');
+                    }
+                    const post = await res.json();
+                    socket.emit('post:created');
+                    return { ok: true, post };
+                } catch (err) {
+                    return { ok: false, message: err.message };
+                }
+            };
+
+            const uploadFile = async (file) => {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch(`${API_URL}/api/upload`, {
+                    method: 'POST',
+                    headers: { 'X-User-Id': userSession.token },
+                    body: formData
+                });
+                if (!res.ok) throw new Error((await safeJSON(res)).error || 'Upload failed');
+                return (await res.json()).url;
+            };
+
+            const handleCreatePost = async (e) => {
+                e.preventDefault();
+                const title = document.getElementById('post-title').value.trim();
+                const content = document.getElementById('post-content').value.trim();
+                const flairEl = createPostModal.querySelector('#flair-selection .flair-btn.selected');
+                const flair = flairEl ? flairEl.dataset.flair : 'General';
+                const imageInput = document.getElementById('post-image-upload');
+                const videoInput = document.getElementById('post-video-upload');
+                const linkInput = document.getElementById('post-link-url');
+                const pollOptionsInput = document.getElementById('poll-options');
+                const useAiAssistant = document.getElementById('use-ai-assistant')?.checked || false;
+                let imageUrl = null, videoUrl = null, linkUrl = null, pollOptions = [];
+                if (imageInput?.files?.[0]) {
+                    imageUrl = await uploadFile(imageInput.files[0]);
+                }
+                if (videoInput?.files?.[0]) {
+                    videoUrl = await uploadFile(videoInput.files[0]);
+                }
+                if (linkInput?.value.trim()) {
+                    linkUrl = linkInput.value.trim();
+                }
+                if (pollOptionsInput?.value.trim()) {
+                    pollOptions = pollOptionsInput.value.split('\n').map(opt => ({ option: opt.trim(), votes: 0 })).filter(opt => opt.option);
+                }
+                if (!title || !content) { showNotification('Title and content required', 'error'); return; }
+                const btn = e.submitter || createPostModal.querySelector('button[type="submit"]');
+                btn.disabled = true;
+                btn.textContent = 'Posting...';
+                const result = await sendPostData(title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, useAiAssistant);
+                btn.disabled = false;
+                btn.textContent = 'Post';
+                if (!result.ok) {
+                    showNotification(result.message || 'Failed to post', 'error');
+                } else {
+                    createPostModal.classList.remove('modal-active');
+                    showNotification('Post created');
+                    await fetchPosts();
+                }
+            };
+
+            // AI Helpers
+            const handleImproveAI = async () => {
+                const contentEl = document.getElementById('post-content');
+                if (!contentEl) return;
+                const original = contentEl.value.trim();
+                if (!original) { showNotification('Write something first', 'error'); return; }
+                try {
+                    const res = await fetch(`${API_URL}/api/improve-text`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ text: original })
+                    });
+                    if (!res.ok) throw new Error((await safeJSON(res)).error || 'AI improve failed');
+                    const { improved_text } = await res.json();
+                    contentEl.value = improved_text || original;
+                    showNotification('Improved with AI ✨');
+                } catch (err) {
+                    showNotification(err.message || 'AI service failed', 'error');
+                }
+            };
+
+            const handleSummarize = async () => {
+                summaryModal.innerHTML = `
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-2xl">
+                        <h3 class="font-bold dark:text-white">Summarize Feed</h3>
+                        <div id="summary-content" class="mt-4 text-sm dark:text-gray-300">Loading summary...</div>
+                        <div class="mt-4 flex justify-end">
+                            <button id="close-summary-modal" class="px-3 py-1 rounded-md bg-gray-200 dark:bg-slate-700 dark:text-gray-200">Close</button>
+                        </div>
+                    </div>`;
+                addModalCloseListener(summaryModal);
+                document.getElementById('close-summary-modal').onclick = () => summaryModal.classList.remove('modal-active');
+                const postsToSummarize = allPosts.slice(0, 10).map(p => ({ title: p.title, content: p.content }));
+                try {
+                    const res = await fetch(`${API_URL}/api/summarize-feed`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ posts: postsToSummarize })
+                    });
+                    if (!res.ok) throw new Error((await safeJSON(res)).error || 'Failed to summarize');
+                    const { summary } = await res.json();
+                    document.getElementById('summary-content').innerHTML = marked.parse(escapeHtml(summary));
+                } catch (err) {
+                    document.getElementById('summary-content').textContent = err.message || 'AI summarize failed';
+                }
+            };
+
+            // Blockchain Verify
+            const handleVerifyBlockchain = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/blockchain/verify`, { headers: authHeaders() });
+                    if (!res.ok) throw new Error((await safeJSON(res)).error || 'Failed to verify blockchain');
+                    const { is_valid, chain_length } = await res.json();
+                    showNotification(`Blockchain ${is_valid ? 'valid' : 'invalid'}. Chain length: ${chain_length}`, is_valid ? 'info' : 'error');
+                } catch (err) {
+                    showNotification(err.message || 'Failed to verify blockchain', 'error');
+                }
+            };
+
+            // Login
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email').value.trim();
+                const password = document.getElementById('password').value.trim();
+                const errorEl = document.getElementById('login-error');
+                errorEl.classList.add('hidden');
+                if (!email || !password) {
+                    errorEl.textContent = 'Enter credentials';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                try {
+                    const res = await fetch(`${API_URL}/api/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    if (!res.ok) {
+                        const body = await safeJSON(res);
+                        throw new Error(body.error || 'Login failed');
+                    }
+                    const payload = await res.json();
+                    userSession = {
+                        token: payload.token,
+                        role: payload.role,
+                        username: payload.username,
+                        email: payload.email,
+                        picture: payload.picture || null
+                    };
+                    localStorage.setItem('buildathon_session', JSON.stringify(userSession));
+                    loginModal.classList.remove('modal-active');
+                    showLoggedInUI();
+                    await fetchPosts();
+                    showNotification('Logged in');
+                } catch (err) {
+                    errorEl.textContent = err.message || 'Login failed';
+                    errorEl.classList.remove('hidden');
+                }
+            };
+
+            // Register
+            const handleRegister = async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('reg-email').value.trim();
+                const username = document.getElementById('reg-username').value.trim();
+                const password = document.getElementById('reg-password').value.trim();
+                const errorEl = document.getElementById('register-error');
+                errorEl.classList.add('hidden');
+                if (!email || !password || !username) {
+                    errorEl.textContent = 'All fields required';
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+                try {
+                    const res = await fetch(`${API_URL}/api/register`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, username, password })
+                    });
+                    if (!res.ok) {
+                        const body = await safeJSON(res);
+                        throw new Error(body.error || 'Registration failed');
+                    }
+                    const payload = await res.json();
+                    userSession = {
+                        token: payload.token,
+                        role: payload.role,
+                        username: payload.username,
+                        email: payload.email,
+                        picture: payload.picture || null
+                    };
+                    localStorage.setItem('buildathon_session', JSON.stringify(userSession));
+                    registerModal.classList.remove('modal-active');
+                    showLoggedInUI();
+                    await fetchPosts();
+                    showNotification('Registered and logged in');
+                } catch (err) {
+                    errorEl.textContent = err.message || 'Registration failed';
+                    errorEl.classList.remove('hidden');
+                }
+            };
+
+            // Delete Confirm
+            const confirmDelete = (type, ids) => {
+                deleteConfirmModal.innerHTML = `
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+                        <h2 class="text-2xl font-bold mb-4 dark:text-white">Confirm Deletion</h2>
+                        <p class="dark:text-gray-300">Are you sure you want to delete this ${type}? This action cannot be undone.</p>
+                        <div class="flex justify-end mt-6 space-x-4">
+                            <button id="cancel-delete" class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-slate-700 dark:text-gray-200">Cancel</button>
+                            <button id="confirm-delete-btn" class="px-4 py-2 rounded-lg bg-red-600 text-white">Delete</button>
+                        </div>
+                    </div>`;
+                deleteConfirmModal.classList.add('modal-active');
+                addModalCloseListener(deleteConfirmModal);
+                document.getElementById('cancel-delete').onclick = () => deleteConfirmModal.classList.remove('modal-active');
+                document.getElementById('confirm-delete-btn').onclick = async () => {
+                    try {
+                        if (type === 'post') {
+                            const res = await fetch(`${API_URL}/api/posts/${ids.postId}`, {
+                                method: 'DELETE',
+                                headers: authHeaders()
+                            });
+                            if (!res.ok) throw new Error((await safeJSON(res)).error || 'Failed to delete post');
+                            socket.emit('post:deleted');
+                        } else if (type === 'comment') {
+                            const res = await fetch(`${API_URL}/api/posts/${ids.postId}/comments/${ids.commentId}`, {
+                                method: 'DELETE',
+                                headers: authHeaders()
+                            });
+                            if (!res.ok) throw new Error((await safeJSON(res)).error || 'Failed to delete comment');
+                            socket.emit('post:updated');
+                        }
+                        deleteConfirmModal.classList.remove('modal-active');
+                        if (feedContent.classList.contains('hidden')) {
+                            showProfilePage();
+                        } else {
+                            await fetchPosts();
+                        }
+                        showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted`);
+                    } catch (error) {
+                        showNotification(error.message || `Failed to delete ${type}`, 'error');
+                    }
+                };
+            };
+
+            // Login State UI
+            const checkLoginState = () => {
+                const raw = localStorage.getItem('buildathon_session');
+                if (raw) {
+                    try {
+                        userSession = JSON.parse(raw);  // Assign to global
+                    } catch { userSession = null; }
+                } else {
+                    userSession = null;
+                }
+                if (userSession) showLoggedInUI(); else showLoggedOutUI();
+                fetchPosts();
+            };
+
+            const showLoggedInUI = () => {
+                loginButton.classList.add('hidden');
+                userControls.classList.remove('hidden');
+                createPostButton.classList.remove('hidden');
+                if (userSession.role === 'staff') {
+                    summarizeButton.classList.remove('hidden');
+                    verifyBlockchain.classList.remove('hidden');
+                }
+                if (userSession.picture) {
+                    userInitialCircle.innerHTML = `<img src="${userSession.picture}" class="w-full h-full object-cover">`;
+                } else {
+                    userInitialCircle.textContent = (userSession.username || userSession.email || 'U')[0].toUpperCase();
+                }
+            };
+
+            const showLoggedOutUI = () => {
+                loginButton.classList.remove('hidden');
+                userControls.classList.add('hidden');
+                summarizeButton.classList.add('hidden');
+                verifyBlockchain.classList.add('hidden');
+                createPostButton.classList.remove('hidden');
+                userInitialCircle.textContent = '';
+                userInitialCircle.innerHTML = '';
+            };
+
+            // Event Listeners
+            const handleSearch = debounce(applyFiltersAndSort, 300);
+            sortNewBtn.addEventListener('click', () => { currentSort = 'new'; applyFiltersAndSort(); });
+            sortHotBtn.addEventListener('click', () => { currentSort = 'hot'; applyFiltersAndSort(); });
+            clearFlairFilter.addEventListener('click', () => { currentFlairFilter = null; applyFiltersAndSort(); });
+            searchInput.addEventListener('input', handleSearch);
+            clearSearch.addEventListener('click', () => { searchInput.value = ''; applyFiltersAndSort(); });
+
+            loginButton.addEventListener('click', () => {
+                loginModal.innerHTML = `
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+                        <h2 class="text-2xl font-bold mb-4 dark:text-white">Login to Buildathon</h2>
+                        <form id="login-form">
+                            <div class="mb-4">
+                                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                                <input type="email" id="email" required class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="student@student.edu">
+                            </div>
+                            <div class="mb-6">
+                                <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                                <input type="password" id="password" required class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="password123">
+                            </div>
+                            <div id="login-error" class="text-red-500 text-sm mb-4 hidden"></div>
+                            <div class="flex items-center justify-between">
+                                <button type="button" class="close-modal-btn text-gray-600 dark:text-gray-400">Cancel</button>
+                                <div>
+                                    <button type="button" id="register-switch" class="text-yellow-600 hover:underline dark:text-yellow-500 mr-4">Sign Up</button>
+                                    <button type="submit" class="px-6 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">Login</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>`;
+                const form = document.getElementById('login-form');
+                form.addEventListener('submit', handleLogin);
+                document.getElementById('register-switch').onclick = () => {
+                    loginModal.classList.remove('modal-active');
+                    registerModal.classList.add('modal-active');
+                };
+                document.querySelector('#login-modal .close-modal-btn').onclick = () => loginModal.classList.remove('modal-active');
+                loginModal.classList.add('modal-active');
+                addModalCloseListener(loginModal);
+            });
+
+            createPostButton.addEventListener('click', () => {
+                if (!userSession) {
+                    loginButton.click();
+                    return;
+                }
+                createPostModal.innerHTML = `
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-2xl">
+                        <h2 class="text-2xl font-bold mb-4 dark:text-white">Create a New Post</h2>
+                        <form id="create-post-form">
+                            <div class="mb-4">
+                                <label for="post-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                                <input type="text" id="post-title" required class="mt-1 block w-full border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500">
+                            </div>
+                            <div class="mb-4">
+                                <label for="post-content" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Content</label>
+                                <textarea id="post-content" rows="6" required class="mt-1 block w-full border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500"></textarea>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Flair</label>
+                                <div id="flair-selection" class="flex flex-wrap gap-2 mt-1">
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Appreciation">Appreciation</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Criticism">Criticism</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Complaint">Complaint</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Review">Review</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="General">General</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Query">Query</button>
+                                    <button type="button" class="flair-btn px-3 py-1 text-sm rounded-full bg-gray-200 dark:bg-slate-700" data-flair="Custom">Custom</button>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Attach Image (Optional)</label>
+                                <input type="file" id="post-image-upload" accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 dark:file:bg-slate-700 dark:file:text-yellow-400 dark:hover:file:bg-slate-600"/>
+                                <img id="post-image-preview" class="hidden mt-2 rounded-lg max-h-48"/>
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Attach Video (Optional)</label>
+                                <input type="file" id="post-video-upload" accept="video/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 dark:file:bg-slate-700 dark:file:text-yellow-400 dark:hover:file:bg-slate-600"/>
+                                <video id="post-video-preview" class="hidden mt-2 rounded-lg max-h-48" controls></video>
+                            </div>
+                            <div class="mb-4">
+                                <label for="post-link-url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Link URL (Optional)</label>
+                                <input type="url" id="post-link-url" class="mt-1 block w-full border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500" placeholder="https://example.com">
+                            </div>
+                            <div class="mb-4">
+                                <label for="poll-options" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Poll Options (Optional, one per line)</label>
+                                <textarea id="poll-options" rows="4" class="mt-1 block w-full border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-yellow-500" placeholder="Option 1\nOption 2\nOption 3"></textarea>
+                            </div>
+                            <div class="mb-4">
+                                <label class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    <input type="checkbox" id="use-ai-assistant" class="mr-2">
+                                    Use AI Writing Assistant
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <button type="button" class="close-modal-btn text-gray-600 dark:text-gray-400">Cancel</button>
+                                <div>
+                                    <button type="button" id="improve-ai-button" class="px-4 py-2 mr-2 border border-yellow-500 text-yellow-600 rounded-lg hover:bg-yellow-50 dark:text-yellow-400 dark:border-yellow-400 dark:hover:bg-slate-700">Improve with AI ✨</button>
+                                    <button type="submit" class="px-6 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">Post</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>`;
+                const form = document.getElementById('create-post-form');
+                form.addEventListener('submit', handleCreatePost);
+                document.getElementById('improve-ai-button').addEventListener('click', handleImproveAI);
+                document.querySelector('#create-post-modal .close-modal-btn').onclick = () => createPostModal.classList.remove('modal-active');
+                createPostModal.querySelectorAll('#flair-selection .flair-btn').forEach(btn => {
+                    btn.onclick = (e) => {
+                        createPostModal.querySelectorAll('#flair-selection .flair-btn').forEach(b => b.classList.remove('selected'));
+                        e.target.classList.add('selected');
+                    };
+                });
+                const handleFilePreview = (inputId, previewId, type) => {
+                    const input = document.getElementById(inputId);
+                    const preview = document.getElementById(previewId);
+                    input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                preview.src = event.target.result;
+                                preview.classList.remove('hidden');
+                            };
+                            reader.readAsDataURL(file);
+                        } else {
+                            preview.classList.add('hidden');
+                        }
+                    };
+                };
+                handleFilePreview('post-image-upload', 'post-image-preview', 'image');
+                handleFilePreview('post-video-upload', 'post-video-preview', 'video');
+                createPostModal.classList.add('modal-active');
+                addModalCloseListener(createPostModal);
+            });
+
+            changePictureModal.innerHTML = `
+                <div id="change-picture-modal-body" class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+                    <h2 class="text-2xl font-bold mb-4 dark:text-white">Change Profile Picture</h2>
+                    <div class="grid grid-cols-3 gap-3"></div>
+                    <div class="flex justify-end mt-6 space-x-4">
+                        <button id="cancel-picture-btn" class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-slate-700 dark:text-gray-200">Cancel</button>
+                        <button id="save-picture-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600">Save</button>
+                    </div>
+                </div>`;
+            document.getElementById('cancel-picture-btn').onclick = () => changePictureModal.classList.remove('modal-active');
+            document.getElementById('save-picture-btn').onclick = updateUserPicture;
+            addModalCloseListener(changePictureModal);
+
+            summarizeButton.addEventListener('click', () => {
+                summaryModal.classList.add('modal-active');
+                handleSummarize();
+            });
+
+            verifyBlockchain.addEventListener('click', handleVerifyBlockchain);
+
+            logoutButton.addEventListener('click', () => {
+                userSession = null;
+                localStorage.removeItem('buildathon_session');
+                checkLoginState();
+                showNotification('Logged out');
+                feedContent.classList.remove('hidden');
+                profileContent.classList.add('hidden');
+            });
+
+            userInitialCircle.addEventListener('click', () => {
+                if (userSession) showProfilePage();
+            });
+
+            registerModal.innerHTML = `
+                <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-md">
+                    <h2 class="text-2xl font-bold mb-4 dark:text-white">Sign Up for Buildathon</h2>
+                    <form id="register-form">
+                        <div class="mb-4">
+                            <label for="reg-email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                            <input type="email" id="reg-email" required class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="student@student.edu">
+                        </div>
+                        <div class="mb-4">
+                            <label for="reg-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                            <input type="text" id="reg-username" required class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="your_username">
+                        </div>
+                        <div class="mb-6">
+                            <label for="reg-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                            <input type="password" id="reg-password" required class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="password123">
+                        </div>
+                        <div id="register-error" class="text-red-500 text-sm mb-4 hidden"></div>
+                        <div class="flex items-center justify-between">
+                            <button type="button" class="close-modal-btn text-gray-600 dark:text-gray-400">Cancel</button>
+                            <div>
+                                <button type="button" id="login-switch" class="text-yellow-600 hover:underline dark:text-yellow-500 mr-4">Login</button>
+                                <button type="submit" class="px-6 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">Sign Up</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>`;
+            const form = document.getElementById('register-form');
+            form.addEventListener('submit', handleRegister);
+            document.getElementById('login-switch').onclick = () => {
+                registerModal.classList.remove('modal-active');
+                loginModal.classList.add('modal-active');
+            };
+            document.querySelector('#register-modal .close-modal-btn').onclick = () => registerModal.classList.remove('modal-active');
+            addModalCloseListener(registerModal);
+
+            // Splash screen
+            setTimeout(() => { 
+                splashScreen.classList.add('fade-out'); 
+            }, 1500);
+            splashScreen.addEventListener('animationend', () => { 
+                splashScreen.style.display = 'none'; 
+                appWrapper.classList.add('visible'); 
+            });
+
+            // Brand reload
+            brandReload.addEventListener('click', (e) => { 
+                e.preventDefault(); 
+                fetchPosts(); 
+            });
+
+            // Initial state
             checkLoginState();
-        } catch (error) {
-            loginError.textContent = 'Login failed. Please check your email and password.';
-            loginError.classList.remove('hidden');
-        }
-    });
 
-    logoutButton.addEventListener('click', () => {
-        userSession = null;
-        localStorage.removeItem('buildathon_session');
-        checkLoginState();
-        showFeed();
-    });
-
-    function updateUserPicture() {
-        if (!tempProfilePic) return;
-        userSession.profilePicture = tempProfilePic;
-        localStorage.setItem('buildathon_session', JSON.stringify(userSession));
-        showLoggedInUI();
-        if(!profilePage.classList.contains('hidden')) {
-            profilePagePic.src = tempProfilePic;
-        }
-        closePictureModalFunction();
-    }
-    
-    function closePictureModalFunction() {
-        tempProfilePic = null;
-        document.querySelectorAll('.avatar-option.selected').forEach(el => el.classList.remove('selected'));
-        changePictureModal.classList.remove('modal-active');
-    }
-    
-    function selectAvatar(element, src) {
-        document.querySelectorAll('.avatar-option.selected').forEach(el => el.classList.remove('selected'));
-        element.classList.add('selected');
-        tempProfilePic = src;
-    }
-    
-    userInitialCircle.addEventListener('click', () => { if(userSession) showProfilePage(); });
-    backToFeedButton.addEventListener('click', showFeed);
-    changePictureButton.addEventListener('click', () => changePictureModal.classList.add('modal-active'));
-    closePictureModal.addEventListener('click', closePictureModalFunction);
-    savePictureButton.addEventListener('click', updateUserPicture);
-    loginButton.addEventListener('click', () => loginModal.classList.add('modal-active'));
-    closeLoginModal.addEventListener('click', () => loginModal.classList.remove('modal-active'));
-    createPostButton.addEventListener('click', () => createPostModal.classList.add('modal-active'));
-    closePostModal.addEventListener('click', () => createPostModal.classList.remove('modal-active'));
-
-    function showNotification(message, type = 'error') {
-        notification.textContent = message;
-        notification.className = 'fixed bottom-5 right-5 text-white py-3 px-6 rounded-lg shadow-lg';
-        notification.classList.add(type === 'info' ? 'bg-yellow-500' : 'bg-red-500');
-        notification.classList.add('show');
-        setTimeout(() => notification.classList.remove('show'), 3000);
-    }
-
-    async function handleVote(postId, direction) {
-        if (!userSession) { showNotification('Please log in to vote.'); return; }
-        await fetch(`${API_URL}/api/posts/${postId}/vote`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
-            body: JSON.stringify({ direction: direction })
-        });
-    }
-
-    async function toggleComments(postId) {
-        const commentsSection = document.getElementById(`comments-section-${postId}`);
-        const isExpanded = commentsSection.classList.contains('expanded');
-        if (!isExpanded && commentsSection.innerHTML === '') {
-            await fetchAndRenderComments(postId);
-        }
-        commentsSection.classList.toggle('expanded');
-    }
-
-    async function fetchAndRenderComments(postId) {
-        const commentsSection = document.getElementById(`comments-section-${postId}`);
-        commentsSection.innerHTML = `<div class="text-sm text-gray-500 dark:text-gray-400 p-4">Loading...</div>`;
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (userSession) headers['X-User-Role'] = userSession.role;
-            const response = await fetch(`${API_URL}/api/posts/${postId}/comments`, { headers });
-            const comments = await response.json();
-            
-            let commentsHTML = comments.length > 0 ? comments.map(c => `<div class="border-t border-gray-100 dark:border-slate-700 py-3"><p class="text-sm font-semibold text-gray-600 dark:text-gray-300">${c.author_id}</p><p class="text-gray-800 dark:text-gray-200">${c.content}</p></div>`).join('') : '<p class="text-sm text-gray-500 dark:text-gray-400 py-3">No comments yet.</p>';
-            if (userSession) {
-                 commentsHTML += `<form class="add-comment-form border-t border-gray-200 dark:border-slate-700 pt-4" data-post-id="${postId}"><textarea class="w-full p-2 border rounded-md shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Add a comment..." required></textarea><button type="submit" class="mt-2 px-4 py-1 bg-yellow-500 text-white text-sm rounded-md hover:bg-yellow-600">Comment</button></form>`;
-            }
-            commentsSection.innerHTML = commentsHTML;
-            const form = commentsSection.querySelector('.add-comment-form');
-            if(form) form.addEventListener('submit', handlePostComment);
-        } catch (error) {
-            commentsSection.innerHTML = `<div class="text-sm text-red-500 p-4">Failed to load comments.</div>`;
-        }
-    }
-    
-    async function handlePostComment(event) {
-        event.preventDefault();
-        const postId = event.target.dataset.postId;
-        const textarea = event.target.querySelector('textarea');
-        await fetch(`${API_URL}/api/posts/${postId}/comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
-            body: JSON.stringify({ content: textarea.value })
-        });
-    }
-
-    const renderPosts = (posts) => {
-        const openPostId = document.querySelector('.comments-section.expanded')?.id.split('-')[2];
-        const searchTerm = searchInput.value;
-        if (posts.length === 0) {
-            postsContainer.innerHTML = `<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center dark:text-gray-400">${searchTerm ? 'No results found for "' + searchTerm + '".' : 'No posts yet. Be the first to post!'}</div>`;
-            return;
-        }
-        postsContainer.innerHTML = '';
-        posts.forEach(post => {
-            const postElement = document.createElement('div');
-            postElement.className = 'bg-white dark:bg-slate-800 p-4 rounded-lg shadow transition-colors duration-300';
-            const upvotedClass = post.user_vote === 'up' ? 'upvoted' : '';
-            const downvotedClass = post.user_vote === 'down' ? 'downvoted' : '';
-            postElement.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div>
-                        <span class="bg-gray-200 text-xs font-semibold px-2 py-0.5 rounded-full dark:bg-slate-700 dark:text-slate-300">${post.flair || 'General'}</span>
-                        <h2 class="text-xl font-bold mt-2 dark:text-white">${post.title}</h2>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">Posted by ${post.author}</p>
-                    </div>
-                    <div class="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
-                        <button data-post-id="${post.id}" data-direction="up" class="vote-button hover:text-green-500 text-xl ${upvotedClass}">▲</button>
-                        <span class="font-bold text-lg dark:text-white">${post.upvotes - post.downvotes}</span>
-                        <button data-post-id="${post.id}" data-direction="down" class="vote-button hover:text-red-500 text-xl ${downvotedClass}">▼</button>
-                    </div>
-                </div>
-                ${post.is_moderated ? `<p class="text-xs text-red-500 mb-2">This content was flagged by our AI for review.</p>` : ''}
-                <div class="${post.is_moderated ? 'blur-content' : ''} mt-2 text-gray-700 dark:text-gray-300">${post.content}</div>
-                <div class="mt-4 pt-2 border-t border-gray-100 dark:border-slate-700">
-                    <button class="comments-toggle-button text-sm text-gray-600 hover:text-yellow-600 font-semibold dark:text-gray-400 dark:hover:text-yellow-500" data-post-id="${post.id}">${post.comments_count} comments</button>
-                </div>
-                <div id="comments-section-${post.id}" class="comments-section pl-4 mt-2"></div>`;
-            postsContainer.appendChild(postElement);
-        });
-        document.querySelectorAll('.vote-button').forEach(b => b.addEventListener('click', e => handleVote(e.currentTarget.dataset.postId, e.currentTarget.dataset.direction)));
-        document.querySelectorAll('.comments-toggle-button').forEach(b => b.addEventListener('click', e => toggleComments(e.currentTarget.dataset.postId)));
-        if(openPostId) {
-            const commentsSection = document.getElementById(`comments-section-${openPostId}`);
-            if(commentsSection) {
-                fetchAndRenderComments(openPostId);
-                commentsSection.classList.add('expanded');
-            }
-        }
-    };
-
-    const fetchPosts = async () => {
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (userSession) {
-                headers['X-User-Role'] = userSession.role;
-                headers['X-User-Id'] = userSession.token;
-            }
-            const response = await fetch(`${API_URL}/api/posts`, { headers: headers, cache: 'no-cache' });
-            if (!response.ok) throw new Error('Network error');
-            allPosts = await response.json();
-            renderPosts(allPosts.filter(post => {
-                const searchTerm = searchInput.value.toLowerCase();
-                if (!searchTerm) return true;
-                return post.title.toLowerCase().includes(searchTerm) || post.content.toLowerCase().includes(searchTerm);
-            }));
-        } catch (error) {
-            postsContainer.innerHTML = '<div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow text-center text-red-500">Failed to load posts. Is the backend server running?</div>';
-        }
-    };
-    
-    function handleSearch(event) {
-        const searchTerm = event.target.value.toLowerCase();
-        const filteredPosts = allPosts.filter(post => {
-            return post.title.toLowerCase().includes(searchTerm) || post.content.toLowerCase().includes(searchTerm);
-        });
-        renderPosts(filteredPosts);
-    }
-    
-    createPostForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        await fetch(`${API_URL}/api/posts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': userSession.token },
-            body: JSON.stringify({ title: document.getElementById('post-title').value, content: document.getElementById('post-content').value })
-        });
-        createPostForm.reset();
-        createPostModal.classList.remove('modal-active');
-    });
-
-    improveAIButton.addEventListener('click', async () => {
-        const originalText = postContentInput.value;
-        if (!originalText) return;
-        improveAIButton.textContent = 'Improving...';
-        improveAIButton.disabled = true;
-        try {
-            const response = await fetch(`${API_URL}/api/improve-text`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: originalText })
+            // Socket events
+            socket.on('connect', () => console.log('Socket connected'));
+            socket.on('error', () => showNotification('Connection error', 'error'));
+            socket.on('post:updated', (updatedPost) => {
+            // Find and replace the post in allPosts
+                const index = allPosts.findIndex(p => p.id === updatedPost.id);
+                if (index !== -1) {
+                    allPosts[index] = { ...allPosts[index], ...updatedPost };  // Merge updates (votes, etc.)
+                    applyFiltersAndSort();  // Re-render with updated data
+                }
             });
-            if (!response.ok) throw new Error('AI service failed');
-            const data = await response.json();
-            postContentInput.value = data.improved_text;
-        } catch (error) { 
-            console.error('AI improvement failed:', error);
-            showNotification('AI Assistant is currently unavailable.');
-        } finally {
-            improveAIButton.textContent = 'Improve with AI ✨';
-            improveAIButton.disabled = false;
-        }
-    });
-
-    // --- Initial Load ---
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            splashScreen.classList.add('fade-out');
-        }, 1500);
-
-        splashScreen.addEventListener('animationend', () => {
-            splashScreen.style.display = 'none';
-            appWrapper.classList.add('visible');
+            socket.on('post:created', (newPost) => {
+                allPosts.unshift(newPost);  // Add to top
+                applyFiltersAndSort();  // Re-render
+            });
+            socket.on('update_feed', () => fetchPosts());
+            socket.on('user:updated', () => {
+                if (userSession) {
+                    showLoggedInUI();
+                    if (feedContent.classList.contains('hidden')) {
+                        showProfilePage();
+                    }
+                }
+            });
+            socket.on('disconnect', () => console.log('Socket disconnected'));
         });
-
-        searchInput.addEventListener('input', handleSearch);
-        // updateThemeIcon(); // No longer needed
-        populateAvatars();
-        checkLoginState();
-    });
-
-</script>
+    </script>
 </body>
 </html>
-
