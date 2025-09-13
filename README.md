@@ -26,4 +26,28 @@ This project provides a **fully anonymous feedback system** enhanced with AI and
 
 ---
 
-## 🏗️ System Architecture
+## Setup
+1. Install deps: `pip install -r requirements.txt`
+2. Set env vars in `.env`:
+   - MONGO_URI=your_mongo_uri
+   - GEMINI_API_KEY=your_gemini_key
+3. Run backend: `python backend/app.py`
+4. Seed data: `python data/sample_data.py`
+5. Frontend: (Add instructions when provided)
+
+## Features
+- Posts/comments/votes with flairs
+- AI moderation (text/image)
+- Writing assistant
+- Feed summarization
+- Blockchain logging
+
+## Structure
+- frontend/
+- backend/app.py
+- blockchain/blockchain.py
+- models/*.py
+- data/sample_data.py
+- README.md
+- requirements.txt
+- package.json

@@ -1,55 +1,48 @@
 import hashlib
 import json
 from datetime import datetime
+import os  # New: For file persistence
 
 class Block:
-    """
-    Represents a single block in our blockchain.
-    """
     def __init__(self, index, timestamp, data, previous_hash):
         self.index = index
         self.timestamp = timestamp
-        self.data = data # e.g., a post, a comment, an upvote
+        self.data = data  # Now: {"type": "post", "id": "id", "hash": "sha256_hash"} for anonymity
         self.previous_hash = previous_hash
         self.hash = self.calculate_hash()
 
     def calculate_hash(self):
-        """
-        Calculates the SHA-256 hash of the block's contents.
-        """
-        # We must make sure that the Dictionary is Ordered, or we'll have inconsistent hashes
         block_string = json.dumps({
             "index": self.index,
             "timestamp": str(self.timestamp),
             "data": self.data,
             "previous_hash": self.previous_hash
         }, sort_keys=True).encode()
-        
         return hashlib.sha256(block_string).hexdigest()
 
 class Blockchain:
-    """
-    Manages the chain of blocks.
-    """
     def __init__(self):
-        self.chain = [self.create_genesis_block()]
+        self.chain_file = 'blockchain.json'  # New: Persist to file
+        self.chain = self.load_chain() or [self.create_genesis_block()]
 
     def create_genesis_block(self):
-        """
-        Creates the very first block in the chain, manually.
-        """
-        return Block(0, datetime.now(), "Genesis Block", "0")
+        return Block(0, datetime.now(), {"type": "genesis", "hash": "0"}, "0")
+
+    def load_chain(self):  # New: Load from JSON
+        if os.path.exists(self.chain_file):
+            with open(self.chain_file, 'r') as f:
+                chain_data = json.load(f)
+            return [Block(**block) for block in chain_data]
+        return None
+
+    def save_chain(self):  # New: Save to JSON
+        with open(self.chain_file, 'w') as f:
+            json.dump([block.__dict__ for block in self.chain], f, default=str)
 
     def get_latest_block(self):
-        """
-        Returns the most recent block in the chain.
-        """
         return self.chain[-1]
 
     def add_block(self, new_data):
-        """
-        Creates a new block, links it to the chain, and adds it.
-        """
         latest_block = self.get_latest_block()
         new_block = Block(
             index=latest_block.index + 1,
@@ -58,44 +51,31 @@ class Blockchain:
             previous_hash=latest_block.hash
         )
         self.chain.append(new_block)
+        self.save_chain()  # Save after add
         return new_block
 
     def is_chain_valid(self):
-        """
-        Validates the integrity of the blockchain.
-        Checks if each block's hash is correct and linked to the previous one.
-        """
         for i in range(1, len(self.chain)):
             current_block = self.chain[i]
             previous_block = self.chain[i-1]
-
-            # Check if the hash of the block is correct
             if current_block.hash != current_block.calculate_hash():
                 print(f"Data integrity compromised at block {current_block.index}")
                 return False
-            
-            # Check if the block is correctly linked to the previous block
             if current_block.previous_hash != previous_block.hash:
                 print(f"Chain is broken at block {current_block.index}")
                 return False
-        
         return True
 
-# --- Example Usage (for testing purposes) ---
+# Example Usage
 if __name__ == '__main__':
-    # Create a new blockchain
     buildathon_chain = Blockchain()
-
-    # Add some blocks (representing posts)
     print("Adding block 1...")
-    buildathon_chain.add_block({"post_id": 1, "content": "This is the first post.", "author": "anon1"})
+    buildathon_chain.add_block({"type": "post", "id": 1, "hash": hashlib.sha256("This is the first post.".encode()).hexdigest()})
     
     print("Adding block 2...")
-    buildathon_chain.add_block({"post_id": 2, "content": "Second post content.", "author": "anon2"})
+    buildathon_chain.add_block({"type": "post", "id": 2, "hash": hashlib.sha256("Second post content.".encode()).hexdigest()})
 
-    # Print the chain
     for block in buildathon_chain.chain:
         print(json.dumps(block.__dict__, indent=4, sort_keys=True, default=str))
 
-    # Validate the chain
     print(f"\nIs blockchain valid? {buildathon_chain.is_chain_valid()}")

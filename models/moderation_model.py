@@ -5,6 +5,9 @@ This is a placeholder and can be replaced with a sophisticated ML model later.
 
 # A list of keywords that might indicate inappropriate content.
 # This list should be expanded and handled with care in a real application.
+import re
+
+
 BANNED_WORDS = [
     "abbo", "abo", "abuse", "addict", "addicts", "africa", "african", "alla", "allah", "allahu akbar",
     "anal", "anus", "arab", "arabs", "argie", "aryan", "ass", "asses", "assface", "asshole", "assholes",
@@ -56,31 +59,23 @@ BANNED_WORDS = [
     "bhadwa", "hijda", "chakke", "lund", "tatte", "jhant", "suar", "ullu ka pattha"
 ]
 
-def check_content(text_content):
-    """
-    Checks a given text for inappropriate content based on a keyword list.
-
-    Args:
-        text_content (str): The text of the post or comment to check.
-
-    Returns:
-        dict: A dictionary containing the moderation decision.
-              - "is_flagged": (bool) True if content is deemed inappropriate, False otherwise.
-              - "reason": (str) A brief reason for the decision.
-    """
-    text_lower = text_content.lower()
+def check_content(content, is_image=False):
+    if is_image:
+        # Placeholder for image NSFW detection (e.g., check URL for keywords or use API)
+        # Real: Use opennsfw2 or API call
+        text_lower = content.lower()  # Assume content is URL or alt-text
+        banned_image_terms = ["nsfw", "porn", "xxx"]  # Expand
+        for term in banned_image_terms:
+            if term in text_lower:
+                return {"is_flagged": True, "reason": f"Image flagged for '{term}'"}
+        return {"is_flagged": False, "reason": "Image passed moderation."}
     
+    text_lower = content.lower()
+    # Improved: Check whole words to avoid false positives (e.g., "class" not flagged for "ass")
     for word in BANNED_WORDS:
-        if word in text_lower:
-            return {
-                "is_flagged": True,
-                "reason": f"Content flagged for containing sensitive keyword: '{word}'"
-            }
-            
-    return {
-        "is_flagged": False,
-        "reason": "Content passed moderation."
-    }
+        if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
+            return {"is_flagged": True, "reason": f"Content flagged for '{word}'"}
+    return {"is_flagged": False, "reason": "Content passed moderation."}
 
 # --- Example Usage (for testing the model directly) ---
 if __name__ == '__main__':
