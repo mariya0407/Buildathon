@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 import sys
@@ -9,22 +9,31 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
-from flask import send_from_directory
+import logging
+
+# --- Logging Setup ---
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # --- Project Root Path Setup ---
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from blockchain import blockchain
+try:
+    from blockchain import blockchain
+    logger.info(f"Blockchain module imported: {blockchain}, has add_block: {hasattr(blockchain, 'add_block')}")
+except ImportError as e:
+    logger.error(f"Failed to import blockchain: {str(e)}")
+    raise
+
 from models.moderation_model import check_content
 from models.writing_assistant import improve_text_with_ai
 from models.summarization_model import summarize_text_with_ai
 
 app = Flask(__name__)
-# Explicit CORS for frontend (replace http://localhost:5500 with your prod URL)
-CORS(app, supports_credentials=True, resources={r"/*": {"origins": ["http://localhost:5501", "http://127.0.0.1:5501", "*"]}})
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5501", "http://127.0.0.1:5501", "*"], supports_credentials=True)
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": ["http://localhost:5500", "http://127.0.0.1:5500", "*"]}})
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5500", "http://127.0.0.1:5500", "*"], supports_credentials=True)
 
 # --- MongoDB Connection ---
 try:
@@ -33,10 +42,10 @@ try:
     db = client.unfiltered_db
     users_collection = db.users
     posts_collection = db.posts
-    # Test connection
     client.server_info()
+    logger.info("MongoDB connected successfully")
 except Exception as e:
-    print(f"MongoDB connection failed: {e}")
+    logger.error(f"MongoDB connection failed: {e}")
     raise
 
 # --- Reusable Helper Function for Data Consistency ---
@@ -50,7 +59,7 @@ def enrich_posts_with_authors(posts_list, requesting_user_id=None, requesting_us
 
     author_object_ids = [ObjectId(id_str) for id_str in set(author_ids)]
     authors_cursor = users_collection.find({"_id": {"$in": author_object_ids}})
-    author_map = {str(author['_id']): author['email'] for author in authors_cursor}
+    author_map = {str(author['_id']): author['username'] for author in authors_cursor}
 
     for post in posts_list:
         post['_id'] = str(post['_id'])
@@ -67,173 +76,214 @@ def enrich_posts_with_authors(posts_list, requesting_user_id=None, requesting_us
 # --- API Endpoints ---
 @app.route('/api/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    email = data.get('email')
-    username = data.get('username')
-    password = data.get('password')
-    
-    if not email or not username or not password:
-        return jsonify({"error": "All fields required"}), 400
-    
-    # Check if user exists
-    if users_collection.find_one({"$or": [{"email": email}, {"username": username}]}):
-        return jsonify({"error": "Email or username already exists"}), 400
-    
-    # Determine role based on email domain
-    role = 'staff' if '@faculty.edu' in email else 'student'
-    
-    # Hash password
-    hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-    
-    # Create user
-    new_user = {
-        "email": email,
-        "username": username,
-        "password": hashed_password,
-        "role": role,
-        "profilePicture": None,
-        "posts": [],
-        "created_at": time.time()
-    }
-    result = users_collection.insert_one(new_user)
-    user_id = str(result.inserted_id)
-    
-    # Add user to blockchain for anonymity confirmation
-    user_hash = hashlib.sha256(f"{user_id}:{email}".encode()).hexdigest()
-    blockchain.add_block({"user_id": user_id, "user_hash": user_hash, "timestamp": time.time()})
-    
-    return jsonify({
-        "message": "Registration successful",
-        "token": user_id,
-        "role": role,
-        "username": username,
-        "email": email,
-        "picture": None
-    }), 201
+    try:
+        data = request.get_json()
+        logger.debug(f"Register request data: {data}")
+        email = data.get('email')
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not email or not username or not password:
+            logger.warning("Missing registration fields")
+            return jsonify({"error": "All fields required"}), 400
+        
+        if users_collection.find_one({"$or": [{"email": email}, {"username": username}]}):
+            logger.warning(f"Duplicate email or username: {email}, {username}")
+            return jsonify({"error": "Email or username already exists"}), 400
+        
+        role = 'staff' if '@faculty.edu' in email else 'student'
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+        
+        new_user = {
+            "email": email,
+            "username": username,
+            "password": hashed_password,
+            "role": role,
+            "profilePicture": None,
+            "posts": [],
+            "created_at": time.time()
+        }
+        result = users_collection.insert_one(new_user)
+        user_id = str(result.inserted_id)
+        
+        try:
+            user_hash = hashlib.sha256(f"{user_id}:{email}".encode()).hexdigest()
+            blockchain.add_block({"user_id": user_id, "user_hash": user_hash, "timestamp": time.time()})
+            logger.info(f"User added to blockchain: {user_id}")
+        except Exception as e:
+            logger.error(f"Blockchain add_block failed for user {user_id}: {str(e)}")
+        
+        logger.info(f"User registered: {user_id}, role: {role}")
+        return jsonify({
+            "message": "Registration successful",
+            "token": user_id,
+            "role": role,
+            "username": username,
+            "email": email,
+            "picture": None
+        }), 201
+    except Exception as e:
+        logger.error(f"Registration failed: {str(e)}")
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    user = users_collection.find_one({"email": data.get('email')})
-    if user and check_password_hash(user['password'], data.get('password')):
-        user_id_str = str(user['_id'])
-        return jsonify({
-            "message": "Login successful",
-            "token": user_id_str,
-            "role": user['role'],
-            "username": user.get('username'),
-            "email": user['email'],
-            "picture": user.get('profilePicture')
-        }), 200
-    return jsonify({"error": "Invalid credentials"}), 401
+    try:
+        data = request.get_json()
+        logger.debug(f"Login request data: {data}")
+        user = users_collection.find_one({"email": data.get('email')})
+        if user and check_password_hash(user['password'], data.get('password')):
+            user_id_str = str(user['_id'])
+            logger.info(f"User logged in: {user_id_str}")
+            return jsonify({
+                "message": "Login successful",
+                "token": user_id_str,
+                "role": user['role'],
+                "username": user.get('username'),
+                "email": user['email'],
+                "picture": user.get('profilePicture')
+            }), 200
+        logger.warning("Invalid login credentials")
+        return jsonify({"error": "Invalid credentials"}), 401
+    except Exception as e:
+        logger.error(f"Login failed: {str(e)}")
+        return jsonify({"error": f"Login failed: {str(e)}"}), 500
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
-    user_role = request.headers.get('X-User-Role', 'student')
-    user_id = request.headers.get('X-User-Id')
-    
-    sort = request.args.get('sort', 'new')
-    flair = request.args.get('flair')
-    
-    query = {}
-    if flair:
-        query['flair'] = flair
-    
-    posts_list = list(posts_collection.find(query))
-    
-    if sort == 'hot':
-        posts_list.sort(key=lambda x: (x.get('upvotes', 0) - x.get('downvotes', 0)), reverse=True)
-    else:  # default 'new'
-        posts_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
-    
-    enriched_posts = enrich_posts_with_authors(posts_list, user_id, user_role)
-    return jsonify(enriched_posts), 200
+    try:
+        user_role = request.headers.get('X-User-Role', 'student')
+        user_id = request.headers.get('X-User-Id')
+        sort = request.args.get('sort', 'new')
+        flair = request.args.get('flair')
+        
+        query = {}
+        if flair:
+            query['flair'] = flair
+        
+        posts_list = list(posts_collection.find(query))
+        
+        if sort == 'hot':
+            posts_list.sort(key=lambda x: (x.get('upvotes', 0) - x.get('downvotes', 0)), reverse=True)
+        else:
+            posts_list.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        
+        enriched_posts = enrich_posts_with_authors(posts_list, user_id, user_role)
+        logger.info(f"Fetched {len(enriched_posts)} posts")
+        return jsonify(enriched_posts), 200
+    except Exception as e:
+        logger.error(f"Get posts failed: {str(e)}")
+        return jsonify({"error": f"Failed to fetch posts: {str(e)}"}), 500
 
 @app.route('/api/posts', methods=['POST'])
 def create_post():
-    data = request.get_json()
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    
-    title = data.get('title')
-    content = data.get('content')
-    if not title or not content:
-        return jsonify({"error": "Title and content required"}), 400
-    
-    # AI content moderation
-    moderation_result = check_content(content)
-    if data.get('imageUrl'):
-        image_moderation = check_content(data['imageUrl'], is_image=True)
-        moderation_result['is_flagged'] |= image_moderation['is_flagged']
-    
-    # AI writing assistant (optional)
-    improved_content = content
-    if data.get('use_ai_assistant', False):
-        improved_content = improve_text_with_ai(content).get('improved_text', content)
-    
-    new_post = {
-        "title": title,
-        "content": improved_content,
-        "author_id": user_id,
-        "flair": data.get('flair', 'General'),
-        "upvotes": 0,
-        "downvotes": 0,
-        "upvoted_by": [],
-        "downvoted_by": [],
-        "comments": [],
-        "is_moderated": moderation_result["is_flagged"],
-        "imageUrl": data.get('imageUrl'),
-        "videoUrl": data.get('videoUrl'),
-        "linkUrl": data.get('linkUrl'),
-        "pollOptions": data.get('pollOptions', []),
-        "poll_votes": {},  # {user_id: option_index}
-        "timestamp": time.time()
-    }
-    
-    # Add to blockchain for anonymity
-    post_hash = hashlib.sha256(f"{user_id}:{title}:{improved_content}".encode()).hexdigest()
-    blockchain.add_block({"post_id": str(new_post['_id']) if '_id' in new_post else None, "post_hash": post_hash, "timestamp": time.time()})
-    
-    result = posts_collection.insert_one(new_post)
-    new_post['_id'] = result.inserted_id
-    users_collection.update_one({"_id": ObjectId(user_id)}, {"$push": {"posts": result.inserted_id}})
-    
-    enriched_new_post = enrich_posts_with_authors([new_post], user_id, request.headers.get('X-User-Role', 'student'))[0]
-    socketio.emit('post:created', enriched_new_post)
-    
-    return jsonify({"message": "Post created", "post_id": str(result.inserted_id)}), 201
+    try:
+        data = request.get_json()
+        logger.debug(f"Create post request data: {data}")
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id header")
+            return jsonify({"error": "Authentication required"}), 401
+        
+        title = data.get('title')
+        content = data.get('content')
+        if not title or not content:
+            logger.warning("Missing title or content")
+            return jsonify({"error": "Title and content required"}), 400
+        
+        # AI content moderation
+        moderation_result = check_content(content)
+        if data.get('imageUrl'):
+            image_moderation = check_content(data['imageUrl'], is_image=True)
+            moderation_result['is_flagged'] |= image_moderation['is_flagged']
+        
+        # AI writing assistant
+        improved_content = content
+        if data.get('use_ai_assistant', False):
+            try:
+                improved_content = improve_text_with_ai(content).get('improved_text', content)
+            except Exception as e:
+                logger.error(f"AI writing assistant failed: {str(e)}")
+        
+        new_post = {
+            "title": title,
+            "content": improved_content,
+            "author_id": user_id,
+            "flair": data.get('flair', 'General'),
+            "upvotes": 0,
+            "downvotes": 0,
+            "upvoted_by": [],
+            "downvoted_by": [],
+            "comments": [],
+            "is_moderated": moderation_result["is_flagged"],
+            "imageUrl": data.get('imageUrl'),
+            "videoUrl": data.get('videoUrl'),
+            "linkUrl": data.get('linkUrl'),
+            "pollOptions": data.get('pollOptions', []),
+            "poll_votes": {},
+            "timestamp": time.time()
+        }
+        
+        result = posts_collection.insert_one(new_post)
+        new_post['_id'] = result.inserted_id
+        
+        # Add to blockchain (non-critical)
+        try:
+            post_hash = hashlib.sha256(f"{user_id}:{title}:{improved_content}".encode()).hexdigest()
+            blockchain.add_block({"post_id": str(result.inserted_id), "post_hash": post_hash, "timestamp": time.time()})
+            logger.info(f"Post added to blockchain: {str(result.inserted_id)}")
+        except Exception as e:
+            logger.error(f"Blockchain add_block failed for post {str(result.inserted_id)}: {str(e)}")
+            # Return post_id even if blockchain fails
+            return jsonify({"message": "Post created (blockchain error logged)", "post_id": str(result.inserted_id)}), 201
+        
+        users_collection.update_one({"_id": ObjectId(user_id)}, {"$push": {"posts": result.inserted_id}})
+        enriched_new_post = enrich_posts_with_authors([new_post], user_id, request.headers.get('X-User-Role', 'student'))[0]
+        socketio.emit('post:created', enriched_new_post)
+        
+        logger.info(f"Post created: {str(result.inserted_id)} by user {user_id}")
+        return jsonify({"message": "Post created", "post_id": str(result.inserted_id)}), 201
+    except Exception as e:
+        logger.error(f"Create post failed: {str(e)}")
+        return jsonify({"error": f"Failed to create post: {str(e)}", "post_id": str(result.inserted_id) if 'result' in locals() else None}), 500
 
 @app.route('/api/posts/<string:post_id>', methods=['DELETE'])
 def delete_post(post_id):
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id header for delete post")
+            return jsonify({"error": "Authentication required"}), 401
+
         post = posts_collection.find_one({"_id": ObjectId(post_id)})
         if not post:
+            logger.warning(f"Post not found: {post_id}")
             return jsonify({"error": "Post not found"}), 404
         
         if post.get('author_id') != user_id:
+            logger.warning(f"Unauthorized delete attempt: {user_id} on post {post_id}")
             return jsonify({"error": "Unauthorized to delete this post"}), 403
 
         posts_collection.delete_one({"_id": ObjectId(post_id)})
         users_collection.update_one({"_id": ObjectId(user_id)}, {"$pull": {"posts": ObjectId(post_id)}})
         socketio.emit('update_feed')
+        logger.info(f"Post deleted: {post_id}")
         return jsonify({"message": "Post deleted successfully"}), 200
     except Exception as e:
+        logger.error(f"Delete post failed: {str(e)}")
         return jsonify({"error": f"Failed to delete post: {str(e)}"}), 500
 
 @app.route('/api/users/<string:user_id>/profile', methods=['GET'])
 def get_user_profile(user_id):
-    requesting_user_id = request.headers.get('X-User-Id')
-    if not requesting_user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    
     try:
+        requesting_user_id = request.headers.get('X-User-Id')
+        if not requesting_user_id:
+            logger.warning("Missing X-User-Id for profile request")
+            return jsonify({"error": "Authentication required"}), 401
+        
         user = users_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
+            logger.warning(f"User not found: {user_id}")
             return jsonify({"error": "User not found"}), 404
 
         user_posts_cursor = posts_collection.find({"author_id": user_id})
@@ -259,6 +309,7 @@ def get_user_profile(user_id):
                         "user_vote": 'up' if requesting_user_id in comment.get('upvoted_by', []) else 'down' if requesting_user_id in comment.get('downvoted_by', []) else None
                     })
 
+        logger.info(f"Profile fetched for user: {user_id}")
         return jsonify({
             "email": user["email"],
             "username": user.get("username"),
@@ -268,34 +319,41 @@ def get_user_profile(user_id):
             "totalUpvotes": total_upvotes
         }), 200
     except Exception as e:
+        logger.error(f"Get profile failed: {str(e)}")
         return jsonify({"error": f"Failed to load profile: {str(e)}"}), 500
 
-@app.route('/api/users/<string:user_id>/picture', methods=['PUT'])
+@app.route('/api/users/<string:user_id>/picture', methods=['POST'])
 def update_profile_picture(user_id):
-    user_id_auth = request.headers.get('X-User-Id')
-    if not user_id_auth or user_id_auth != user_id:
-        return jsonify({"error": "Unauthorized"}), 403
-    data = request.get_json()
-    picture = data.get('picture')
-    if not picture:
-        return jsonify({"error": "Picture URL required"}), 400
     try:
+        user_id_auth = request.headers.get('X-User-Id')
+        if not user_id_auth or user_id_auth != user_id:
+            logger.warning(f"Unauthorized picture update: {user_id_auth} != {user_id}")
+            return jsonify({"error": "Unauthorized"}), 403
+        data = request.get_json()
+        picture = data.get('picture')
+        if not picture:
+            logger.warning("Missing picture URL")
+            return jsonify({"error": "Picture URL required"}), 400
         users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"profilePicture": picture}})
         socketio.emit('user:updated', {"userId": user_id})
+        logger.info(f"Profile picture updated for user: {user_id}")
         return jsonify({"message": "Profile picture updated"}), 200
     except Exception as e:
+        logger.error(f"Update picture failed: {str(e)}")
         return jsonify({"error": f"Failed to update picture: {str(e)}"}), 500
 
 @app.route('/api/posts/<string:post_id>/vote', methods=['POST'])
 def vote_on_post(post_id):
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    direction = request.get_json().get('direction')
-    
     try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id for vote")
+            return jsonify({"error": "Authentication required"}), 401
+        direction = request.get_json().get('direction')
+        
         post = posts_collection.find_one({"_id": ObjectId(post_id)})
         if not post:
+            logger.warning(f"Post not found for vote: {post_id}")
             return jsonify({"error": "Post not found"}), 404
 
         upvoted_by = set(post.get('upvoted_by', []))
@@ -319,33 +377,38 @@ def vote_on_post(post_id):
             {"$set": {"upvoted_by": list(upvoted_by), "downvoted_by": list(downvoted_by), "upvotes": len(upvoted_by), "downvotes": len(downvoted_by)}}
         )
         
-        # Emit UPDATED_POST to all clients (or specific room/user for scale)
-        updated_post = posts_collection.find_one({"_id": ObjectId(post_id)})  # Refetch for full data
+        updated_post = posts_collection.find_one({"_id": ObjectId(post_id)})
         enriched_post = enrich_posts_with_authors([updated_post], user_id, request.headers.get('X-User-Role', 'student'))[0]
-        socketio.emit('post:updated', enriched_post)  # Frontend listens for this
+        socketio.emit('post:updated', enriched_post)
         
+        logger.info(f"Vote recorded on post: {post_id} by user: {user_id}")
         return jsonify({"message": "Vote recorded"}), 200
     except Exception as e:
+        logger.error(f"Vote failed: {str(e)}")
         return jsonify({"error": f"Failed to vote: {str(e)}"}), 500
 
 @app.route('/api/posts/<string:post_id>/poll', methods=['POST'])
 def vote_on_poll(post_id):
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    option_index = request.get_json().get('optionIndex')
-    
     try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id for poll vote")
+            return jsonify({"error": "Authentication required"}), 401
+        option_index = request.get_json().get('optionIndex')
+        
         post = posts_collection.find_one({"_id": ObjectId(post_id)})
         if not post or not post.get('pollOptions'):
+            logger.warning(f"Poll not found: {post_id}")
             return jsonify({"error": "Poll not found"}), 404
 
         poll_votes = post.get('poll_votes', {})
         if user_id in poll_votes:
+            logger.warning(f"User already voted on poll: {user_id}")
             return jsonify({"error": "User already voted"}), 400
 
         poll_options = post.get('pollOptions', [])
         if not (0 <= option_index < len(poll_options)):
+            logger.warning(f"Invalid poll option index: {option_index}")
             return jsonify({"error": "Invalid option index"}), 400
 
         poll_votes[user_id] = option_index
@@ -356,8 +419,10 @@ def vote_on_poll(post_id):
             {"$set": {"poll_votes": poll_votes, "pollOptions": poll_options}}
         )
         socketio.emit('update_feed')
+        logger.info(f"Poll vote recorded on post: {post_id}")
         return jsonify({"message": "Poll vote recorded"}), 200
     except Exception as e:
+        logger.error(f"Poll vote failed: {str(e)}")
         return jsonify({"error": f"Failed to vote on poll: {str(e)}"}), 500
 
 @app.route('/api/posts/<string:post_id>/comments', methods=['GET', 'POST'])
@@ -366,17 +431,19 @@ def handle_comments(post_id):
         if request.method == 'POST':
             user_id = request.headers.get('X-User-Id')
             if not user_id:
+                logger.warning("Missing X-User-Id for comment")
                 return jsonify({"error": "Authentication required"}), 401
             
             user = users_collection.find_one({"_id": ObjectId(user_id)})
             if not user:
+                logger.warning(f"User not found for comment: {user_id}")
                 return jsonify({"error": "User not found"}), 404
 
             content = request.get_json().get('content')
             if not content:
+                logger.warning("Missing comment content")
                 return jsonify({"error": "Comment content required"}), 400
             
-            # AI moderation for comments
             moderation_result = check_content(content)
             
             new_comment = {
@@ -392,11 +459,13 @@ def handle_comments(post_id):
             }
             posts_collection.update_one({"_id": ObjectId(post_id)}, {"$push": {"comments": new_comment}})
             socketio.emit('update_feed')
+            logger.info(f"Comment added to post: {post_id}")
             return jsonify(new_comment), 201
 
         if request.method == 'GET':
             post = posts_collection.find_one({"_id": ObjectId(post_id)})
             if not post:
+                logger.warning(f"Post not found for comments: {post_id}")
                 return jsonify({"error": "Post not found"}), 404
             requesting_user_role = request.headers.get('X-User-Role', 'student')
             comments = post.get('comments', [])
@@ -408,24 +477,29 @@ def handle_comments(post_id):
                 author_map = {}
             for comment in comments:
                 comment['author'] = "ANONYMOUS" if requesting_user_role == 'staff' else author_map.get(comment.get('author_id'), "Unknown")
+            logger.info(f"Fetched comments for post: {post_id}")
             return jsonify(comments), 200
     except Exception as e:
+        logger.error(f"Handle comments failed: {str(e)}")
         return jsonify({"error": f"Failed to handle comment: {str(e)}"}), 500
 
 @app.route('/api/posts/<string:post_id>/comments/<string:comment_id>/vote', methods=['POST'])
 def vote_on_comment(post_id, comment_id):
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    direction = request.get_json().get('direction')
-    
     try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id for comment vote")
+            return jsonify({"error": "Authentication required"}), 401
+        direction = request.get_json().get('direction')
+        
         post = posts_collection.find_one({"_id": ObjectId(post_id)})
         if not post:
+            logger.warning(f"Post not found for comment vote: {post_id}")
             return jsonify({"error": "Post not found"}), 404
 
         comment = next((c for c in post.get('comments', []) if c['comment_id'] == comment_id), None)
         if not comment:
+            logger.warning(f"Comment not found: {comment_id}")
             return jsonify({"error": "Comment not found"}), 404
 
         upvoted_by = set(comment.get('upvoted_by', []))
@@ -454,31 +528,36 @@ def vote_on_comment(post_id, comment_id):
             }}
         )
         
-        # Emit updated post for comments section
         updated_post = posts_collection.find_one({"_id": ObjectId(post_id)})
         enriched_post = enrich_posts_with_authors([updated_post], user_id, request.headers.get('X-User-Role', 'student'))[0]
         socketio.emit('post:updated', enriched_post)
         
+        logger.info(f"Comment vote recorded on comment: {comment_id}")
         return jsonify({"message": "Comment vote recorded"}), 200
     except Exception as e:
+        logger.error(f"Comment vote failed: {str(e)}")
         return jsonify({"error": f"Failed to vote on comment: {str(e)}"}), 500
 
 @app.route('/api/posts/<string:post_id>/comments/<string:comment_id>', methods=['DELETE'])
 def delete_comment(post_id, comment_id):
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-
     try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id for comment delete")
+            return jsonify({"error": "Authentication required"}), 401
+
         post = posts_collection.find_one({"_id": ObjectId(post_id)})
         if not post:
+            logger.warning(f"Post not found for comment delete: {post_id}")
             return jsonify({"error": "Post not found"}), 404
 
         comment = next((c for c in post.get('comments', []) if c['comment_id'] == comment_id), None)
         if not comment:
+            logger.warning(f"Comment not found: {comment_id}")
             return jsonify({"error": "Comment not found"}), 404
         
         if comment.get('author_id') != user_id:
+            logger.warning(f"Unauthorized comment delete: {user_id} on {comment_id}")
             return jsonify({"error": "Unauthorized to delete this comment"}), 403
         
         posts_collection.update_one(
@@ -486,78 +565,96 @@ def delete_comment(post_id, comment_id):
             {"$pull": {"comments": {"comment_id": comment_id}}}
         )
         socketio.emit('update_feed')
+        logger.info(f"Comment deleted: {comment_id}")
         return jsonify({"message": "Comment deleted"}), 200
     except Exception as e:
+        logger.error(f"Delete comment failed: {str(e)}")
         return jsonify({"error": f"Failed to delete comment: {str(e)}"}), 500
 
 @app.route('/api/summarize-feed', methods=['POST'])
 def summarize_feed():
-    posts = request.get_json().get('posts', [])
-    if not posts:
-        return jsonify({"error": "No posts provided"}), 400
-    full_text = "\n".join([f"Title: {p.get('title', '')} Content: {p.get('content', '')}" for p in posts])
     try:
+        posts = request.get_json().get('posts', [])
+        if not posts:
+            logger.warning("No posts provided for summarization")
+            return jsonify({"error": "No posts provided"}), 400
+        full_text = "\n".join([f"Title: {p.get('title', '')} Content: {p.get('content', '')}" for p in posts])
         summary_result = summarize_text_with_ai(full_text)
+        logger.info("Feed summarized successfully")
         return jsonify({"summary": summary_result}), 200
     except Exception as e:
+        logger.error(f"Summarize feed failed: {str(e)}")
         return jsonify({"error": f"Failed to summarize: {str(e)}"}), 500
 
 @app.route('/api/improve-text', methods=['POST'])
 def improve_text_endpoint():
-    text = request.get_json().get('text')
-    if not text:
-        return jsonify({"error": "Text required"}), 400
     try:
+        text = request.get_json().get('text')
+        if not text:
+            logger.warning("Missing text for improvement")
+            return jsonify({"error": "Text required"}), 400
         improved = improve_text_with_ai(text)
+        logger.info("Text improved successfully")
         return jsonify({"improved_text": improved.get('improved_text', text)}), 200
     except Exception as e:
+        logger.error(f"Improve text failed: {str(e)}")
         return jsonify({"error": f"Failed to improve text: {str(e)}"}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    user_id = request.headers.get('X-User-Id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
-    
-    # Create uploads directory if it doesn't exist
-    upload_dir = os.path.join(project_root, 'uploads')
-    os.makedirs(upload_dir, exist_ok=True)
-    
-    # Save file with unique name
-    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-    filename = f"{user_id}_{int(time.time())}.{ext}"
-    file_path = os.path.join(upload_dir, filename)
-    file.save(file_path)
-    
-    # Check file for moderation (if image)
-    moderation_result = check_content(file_path, is_image=True) if ext in ['jpg', 'jpeg', 'png', 'gif'] else {"is_flagged": False}
-    
-    # Generate URL (relative for dev; use CDN/S3 in prod)
-    file_url = f"/uploads/{filename}"
-    
-    return jsonify({
-        "url": file_url,
-        "is_moderated": moderation_result["is_flagged"]
-    }), 200
+    try:
+        user_id = request.headers.get('X-User-Id')
+        if not user_id:
+            logger.warning("Missing X-User-Id for file upload")
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if 'file' not in request.files:
+            logger.warning("No file provided in upload")
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            logger.warning("No file selected in upload")
+            return jsonify({"error": "No file selected"}), 400
+        
+        upload_dir = os.path.join(project_root, 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+        filename = f"{user_id}_{int(time.time())}.{ext}"
+        file_path = os.path.join(upload_dir, filename)
+        file.save(file_path)
+        
+        moderation_result = check_content(file_path, is_image=True) if ext in ['jpg', 'jpeg', 'png', 'gif'] else {"is_flagged": False}
+        file_url = f"/Uploads/{filename}"
+        
+        logger.info(f"File uploaded: {filename}")
+        return jsonify({
+            "url": file_url,
+            "is_moderated": moderation_result["is_flagged"]
+        }), 200
+    except Exception as e:
+        logger.error(f"File upload failed: {str(e)}")
+        return jsonify({"error": f"Failed to upload file: {str(e)}"}), 500
+
+@app.route('/Uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    try:
+        logger.info(f"Serving file: {filename}")
+        return send_from_directory('Uploads', filename)
+    except Exception as e:
+        logger.error(f"Serve file failed: {filename}, error: {str(e)}")
+        return jsonify({"error": "File not found"}), 404
 
 @app.route('/api/blockchain/verify', methods=['GET'])
 def verify_blockchain():
     try:
         is_valid = blockchain.is_chain_valid()
+        logger.info(f"Blockchain verified, valid: {is_valid}")
         return jsonify({"is_valid": is_valid, "chain_length": len(blockchain.chain)}), 200
     except Exception as e:
+        logger.error(f"Blockchain verify failed: {str(e)}")
         return jsonify({"error": f"Failed to verify blockchain: {str(e)}"}), 500
-
-@app.route('/uploads/<path:filename>')
-def serve_uploaded_file(filename):
-    return send_from_directory('uploads', filename)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5001, debug=True)
