@@ -33,7 +33,7 @@ This project provides a **fully anonymous feedback system** enhanced with AI and
    - GEMINI_API_KEY=your_gemini_key
 3. Run backend: `python backend/app.py`
 4. Seed data: `python data/sample_data.py`
-5. Frontend: (Add instructions when provided)
+5. Frontend: `run index.html`
 
 ## Features
 - Posts/comments/votes with flairs
