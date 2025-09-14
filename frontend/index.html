@@ -661,36 +661,30 @@
 
             // Create Post
             const sendPostData = async (title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, useAiAssistant) => {
-                if (!userSession) { showNotification('Login to post', 'error'); return { ok: false }; }
                 try {
-                    const payload = { title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, use_ai_assistant: useAiAssistant };
-                    const res = await fetch(`${API_URL}/api/posts`, {
+                    const response = await fetch(`${API_URL}/api/posts`, {
                         method: 'POST',
                         headers: authHeaders(),
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify({
+                            title,
+                            content,
+                            flair,
+                            imageUrl,
+                            videoUrl,
+                            linkUrl,
+                            pollOptions,
+                            use_ai_assistant: useAiAssistant
+                        })
                     });
-                    if (!res.ok) {
-                        const body = await safeJSON(res);
-                        throw new Error(body.error || 'Failed to create post');
-                    }
-                    const post = await res.json();
-                    socket.emit('post:created');
-                    return { ok: true, post };
-                } catch (err) {
-                    return { ok: false, message: err.message };
+                    const data = await response.json();
+                    return {
+                        ok: response.ok,
+                        message: data.error || data.message,
+                        post_id: data.post_id
+                    };
+                } catch (error) {
+                    return { ok: false, message: error.message, post_id: null };
                 }
-            };
-
-            const uploadFile = async (file) => {
-                const formData = new FormData();
-                formData.append('file', file);
-                const res = await fetch(`${API_URL}/api/upload`, {
-                    method: 'POST',
-                    headers: { 'X-User-Id': userSession.token },
-                    body: formData
-                });
-                if (!res.ok) throw new Error((await safeJSON(res)).error || 'Upload failed');
-                return (await res.json()).url;
             };
 
             const handleCreatePost = async (e) => {
@@ -705,6 +699,7 @@
                 const pollOptionsInput = document.getElementById('poll-options');
                 const useAiAssistant = document.getElementById('use-ai-assistant')?.checked || false;
                 let imageUrl = null, videoUrl = null, linkUrl = null, pollOptions = [];
+                
                 if (imageInput?.files?.[0]) {
                     imageUrl = await uploadFile(imageInput.files[0]);
                 }
@@ -715,22 +710,35 @@
                     linkUrl = linkInput.value.trim();
                 }
                 if (pollOptionsInput?.value.trim()) {
-                    pollOptions = pollOptionsInput.value.split('\n').map(opt => ({ option: opt.trim(), votes: 0 })).filter(opt => opt.option);
+                    pollOptions = pollOptionsInput.value.split('\n').map(opt => ({ text: opt.trim(), votes: 0 })).filter(opt => opt.text);
                 }
-                if (!title || !content) { showNotification('Title and content required', 'error'); return; }
+                if (!title || !content) {
+                    showNotification('Title and content required', 'error');
+                    return;
+                }
+                
                 const btn = e.submitter || createPostModal.querySelector('button[type="submit"]');
                 btn.disabled = true;
                 btn.textContent = 'Posting...';
+                
                 const result = await sendPostData(title, content, flair, imageUrl, videoUrl, linkUrl, pollOptions, useAiAssistant);
+                
                 btn.disabled = false;
                 btn.textContent = 'Post';
+                
                 if (!result.ok) {
                     showNotification(result.message || 'Failed to post', 'error');
-                } else {
-                    createPostModal.classList.remove('modal-active');
-                    showNotification('Post created');
-                    await fetchPosts();
+                    if (result.post_id) {
+                        console.log('Post created despite error, fetching posts...');
+                        createPostModal.classList.remove('modal-active');
+                        await fetchPosts();
+                    }
+                    return;
                 }
+                
+                createPostModal.classList.remove('modal-active');
+                showNotification('Post created');
+                await fetchPosts();
             };
 
             // AI Helpers
