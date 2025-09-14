@@ -1,4 +1,4 @@
-# Buildathon
+# UniVerse
 
 # Anonymous AI-Powered Student Feedback System
 
